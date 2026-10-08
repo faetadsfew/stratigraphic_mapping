@@ -3,8 +3,10 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
+/out/
 
 ### IntelliJ IDEA ###
+.idea/claudeCodeTabState.xml
 .idea/modules.xml
 .idea/jarRepositories.xml
 .idea/compiler.xml

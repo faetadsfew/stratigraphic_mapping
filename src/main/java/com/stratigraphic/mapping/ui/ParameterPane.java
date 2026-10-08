@@ -1,7 +1,7 @@
-package com.example.demo.ui;
+package com.stratigraphic.mapping.ui;
 
-import com.example.demo.model.StratumInterface;
-import com.example.demo.model.StratumModel;
+import com.stratigraphic.mapping.model.StratumInterface;
+import com.stratigraphic.mapping.model.StratumModel;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;

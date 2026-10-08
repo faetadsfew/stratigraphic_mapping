@@ -1,7 +1,7 @@
-package com.example.demo.ui;
+package com.stratigraphic.mapping.ui;
 
-import com.example.demo.chart.ColorScale;
-import com.example.demo.chart.SectionStyle;
+import com.stratigraphic.mapping.chart.ColorScale;
+import com.stratigraphic.mapping.chart.SectionStyle;
 import javafx.scene.control.Label;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.CycleMethod;

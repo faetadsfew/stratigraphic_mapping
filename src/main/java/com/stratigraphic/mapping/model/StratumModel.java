@@ -1,4 +1,4 @@
-package com.example.demo.model;
+package com.stratigraphic.mapping.model;
 
 import java.util.List;
 

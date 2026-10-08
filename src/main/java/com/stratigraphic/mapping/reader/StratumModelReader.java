@@ -1,7 +1,7 @@
-package com.example.demo.io;
+package com.stratigraphic.mapping.reader;
 
-import com.example.demo.model.StratumInterface;
-import com.example.demo.model.StratumModel;
+import com.stratigraphic.mapping.model.StratumInterface;
+import com.stratigraphic.mapping.model.StratumModel;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;

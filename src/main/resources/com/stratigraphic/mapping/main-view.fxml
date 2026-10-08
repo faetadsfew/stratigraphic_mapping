@@ -20,7 +20,7 @@
 -->
 <BorderPane xmlns:fx="http://javafx.com/fxml"
             fx:id="appRoot"
-            fx:controller="com.example.demo.ui.MainController">
+            fx:controller="com.stratigraphic.mapping.ui.MainController">
 
     <top>
         <HBox styleClass="app-toolbar" alignment="CENTER_LEFT" spacing="8">

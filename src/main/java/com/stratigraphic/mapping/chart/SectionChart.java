@@ -1,7 +1,7 @@
-package com.example.demo.chart;
+package com.stratigraphic.mapping.chart;
 
-import com.example.demo.model.StratumInterface;
-import com.example.demo.model.StratumModel;
+import com.stratigraphic.mapping.model.StratumInterface;
+import com.stratigraphic.mapping.model.StratumModel;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.paint.Color;
 import javafx.scene.control.Label;

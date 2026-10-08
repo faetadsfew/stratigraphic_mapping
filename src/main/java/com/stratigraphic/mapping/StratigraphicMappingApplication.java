@@ -1,4 +1,4 @@
-package com.example.demo;
+package com.stratigraphic.mapping;
 
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -22,7 +22,7 @@ import java.io.IOException;
  *
  * <p>按 F11 切真全屏（连任务栏一起盖住），Esc 退出全屏。
  */
-public class StratumApplication extends Application {
+public class StratigraphicMappingApplication extends Application {
 
     /** 屏幕够大时「还原」用的理想尺寸；屏幕不够大就按比例缩。 */
     private static final double PREFERRED_WIDTH = 1440;
@@ -39,7 +39,7 @@ public class StratumApplication extends Application {
     public void start(Stage stage) throws IOException {
 
         FXMLLoader loader = new FXMLLoader(
-                StratumApplication.class.getResource("main-view.fxml"));
+                StratigraphicMappingApplication.class.getResource("main-view.fxml"));
 
         Parent root = loader.load();
 
@@ -52,7 +52,7 @@ public class StratumApplication extends Application {
 
         // 所有样式集中在 app.css，界面上不写内联样式
         scene.getStylesheets().add(
-                StratumApplication.class.getResource("app.css").toExternalForm());
+                StratigraphicMappingApplication.class.getResource("app.css").toExternalForm());
 
         scene.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.F11) {
