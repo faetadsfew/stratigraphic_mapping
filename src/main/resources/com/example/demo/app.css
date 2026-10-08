@@ -1,0 +1,340 @@
+/* =========================================================
+   井壁地层剖面图 —— 全局样式
+   所有配色 / 字号 / 间距都集中在这个文件里。
+   ========================================================= */
+
+/* ---------------- 全局 ---------------- */
+
+.root {
+    -fx-font-family: "Microsoft YaHei UI";
+    -fx-font-size: 12px;
+    -fx-background-color: #FFFFFF;
+}
+
+/* ---------------- 顶部工具栏 ---------------- */
+
+.app-toolbar {
+    -fx-background-color: #1F2933;
+    -fx-padding: 0 12 0 14;
+    -fx-spacing: 8;
+    -fx-alignment: CENTER_LEFT;
+    -fx-min-height: 40;
+    -fx-pref-height: 40;
+    -fx-max-height: 40;
+}
+
+.app-toolbar .title {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #F5F7FA;
+    -fx-padding: 0 8 0 0;
+}
+
+.app-toolbar .tool-button,
+.tool-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 3;
+    -fx-text-fill: #C7D0D9;
+    -fx-font-size: 12px;
+    -fx-padding: 4 10 4 10;
+    -fx-cursor: hand;
+}
+
+.app-toolbar .tool-button:hover {
+    -fx-background-color: #2F3B47;
+    -fx-text-fill: #FFFFFF;
+}
+
+.app-toolbar .tool-button:pressed {
+    -fx-background-color: #3B4A57;
+}
+
+.tool-button.active,
+.app-toolbar .tool-button.active {
+    -fx-background-color: #2F6FEB;
+    -fx-text-fill: #FFFFFF;
+}
+
+.app-toolbar .tool-button.active:hover {
+    -fx-background-color: #3B7BF5;
+}
+
+/* ---------------- 左侧参数面板 ---------------- */
+
+.parameter-pane {
+    -fx-background-color: #FAFAFA;
+    -fx-border-color: transparent #DDDDDD transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+
+.pane-header {
+    -fx-background-color: #FAFAFA;
+    -fx-padding: 14 14 12 14;
+}
+
+.pane-header .title {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1A1A1A;
+}
+
+.source {
+    -fx-font-size: 11px;
+    -fx-text-fill: #777777;
+}
+
+/* ---------------- 折叠分组（TitledPane / Accordion） ---------------- */
+
+.titled-pane {
+    -fx-text-fill: #2F5D8A;
+    -fx-background-color: transparent;
+    -fx-padding: 0 0 6 0;
+}
+
+.titled-pane > .title,
+.tp-header {
+    -fx-background-color: #EFF3F7;
+    -fx-background-radius: 4 4 0 0;
+    -fx-border-color: #DDE4EB;
+    -fx-border-width: 1;
+    -fx-border-radius: 4 4 0 0;
+    -fx-padding: 6 10 6 10;
+}
+
+.titled-pane > .title:hover,
+.tp-header:hover {
+    -fx-background-color: #E4EBF2;
+}
+
+.titled-pane > .title > .text,
+.tp-title {
+    -fx-font-size: 12.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #2F5D8A;
+}
+
+.titled-pane > *.content,
+.tp-body {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: #DDE4EB;
+    -fx-border-width: 0 1 1 1;
+    -fx-padding: 10;
+}
+
+/* ---------------- 表单 ---------------- */
+
+.form-scroll,
+.form-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.form-row {
+    -fx-padding: 2 0 2 0;
+}
+
+.form-input {
+    -fx-font-size: 12px;
+    -fx-text-fill: #2D3138;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 3;
+    -fx-border-color: #C9D2DB;
+    -fx-border-radius: 3;
+    -fx-padding: 3 6 3 6;
+}
+
+.form-input:focused {
+    -fx-border-color: #2F6FEB;
+}
+
+.field-caption {
+    -fx-font-size: 12px;
+    -fx-text-fill: #444444;
+}
+
+.section-title {
+    -fx-font-size: 12.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #2F5D8A;
+}
+
+.table-header {
+    -fx-font-size: 11px;
+    -fx-text-fill: #777777;
+}
+
+.row-index {
+    -fx-font-size: 12px;
+    -fx-text-fill: #999999;
+}
+
+.mini-btn {
+    -fx-font-size: 11px;
+    -fx-padding: 2 7 2 7;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 3;
+    -fx-border-color: #C9D2DB;
+    -fx-border-radius: 3;
+    -fx-text-fill: #2D3138;
+    -fx-cursor: hand;
+}
+
+.mini-btn:hover {
+    -fx-background-color: #F2F6FA;
+    -fx-border-color: #2F6FEB;
+    -fx-text-fill: #2F6FEB;
+}
+
+.ghost-button {
+    -fx-font-size: 12px;
+    -fx-padding: 5 10 5 10;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 3;
+    -fx-border-color: #C9D2DB;
+    -fx-border-radius: 3;
+    -fx-text-fill: #2D3138;
+    -fx-cursor: hand;
+}
+
+.ghost-button:hover {
+    -fx-border-color: #2F6FEB;
+    -fx-text-fill: #2F6FEB;
+}
+
+/* ---------------- 主按钮 / 提示信息 ---------------- */
+
+.primary-button {
+    -fx-font-size: 13px;
+    -fx-background-color: #2F6FEB;
+    -fx-background-radius: 4;
+    -fx-text-fill: #FFFFFF;
+    -fx-padding: 6 14 6 14;
+    -fx-cursor: hand;
+}
+
+.primary-button:hover {
+    -fx-background-color: #1F5FD8;
+}
+
+.primary-button:pressed {
+    -fx-background-color: #1A54C4;
+}
+
+.msg-error {
+    -fx-font-size: 12px;
+    -fx-text-fill: #C0392B;
+}
+
+.msg-info {
+    -fx-font-size: 12px;
+    -fx-text-fill: #1E7B45;
+}
+
+/* ---------------- 图表区 ---------------- */
+
+.chart-slot {
+    -fx-border-color: transparent transparent transparent #DDDDDD;
+    -fx-border-width: 0 0 0 1;
+}
+
+/* 线框槽补 1px：彩图槽左边有 1px 分隔线，内宽会少 1px，
+   这里补齐后两个槽的可绘图区域一样宽，两张图才严格等大 */
+.line-chart-slot {
+    -fx-padding: 0 1 0 0;
+}
+
+.chart-box {
+    -fx-background-color: #FFFFFF;
+}
+
+.chart-canvas {
+    -fx-background-color: #FFFFFF;
+}
+
+/* 图上点出来的数据小框 */
+.chart-info-text {
+    -fx-font-size: 12px;
+    -fx-text-fill: #1A1A1A;
+    -fx-line-spacing: 4px;
+}
+
+.chart-header {
+    -fx-background-color: #F5F7FA;
+    -fx-border-color: transparent transparent #E3E8EE transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 6 10 6 10;
+    -fx-min-height: 32;
+    -fx-pref-height: 32;
+    -fx-max-height: 32;
+}
+
+.ch-title {
+    -fx-font-size: 12.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #2D3138;
+}
+
+.ch-tag {
+    -fx-font-size: 10px;
+    -fx-text-fill: #7A8794;
+    -fx-background-color: #E7ECF1;
+    -fx-background-radius: 3;
+    -fx-padding: 1 5 1 5;
+}
+
+.chart-hint {
+    -fx-font-size: 13px;
+    -fx-text-fill: #999999;
+}
+
+.hint {
+    -fx-font-size: 11px;
+    -fx-text-fill: #999999;
+}
+
+/* ---------------- 图表下方的确认条 ---------------- */
+
+.chart-footer {
+    -fx-background-color: #FAFAFA;
+    -fx-border-color: #DDDDDD transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* ---------------- 底部状态栏 ---------------- */
+
+.app-statusbar,
+.statusbar {
+    -fx-background-color: #1F2933;
+    -fx-padding: 0 12 0 12;
+    -fx-spacing: 10;
+    -fx-alignment: CENTER_LEFT;
+    -fx-min-height: 24;
+    -fx-pref-height: 24;
+    -fx-max-height: 24;
+}
+
+.app-statusbar .sep,
+.statusbar .sep {
+    -fx-font-size: 11px;
+    -fx-text-fill: #4A5A69;
+}
+
+.app-statusbar .msg,
+.statusbar .msg {
+    -fx-font-size: 11px;
+    -fx-text-fill: #C7D0D9;
+}
+
+/* ---------------- 图上的浮层按钮 ---------------- */
+
+.overlay-button {
+    -fx-font-size: 11px;
+    -fx-padding: 3 8 3 8;
+    -fx-background-color: rgba(31, 41, 51, 0.82);
+    -fx-background-radius: 3;
+    -fx-text-fill: #FFFFFF;
+    -fx-cursor: hand;
+}
+
+.overlay-button:hover {
+    -fx-background-color: #2F6FEB;
+}

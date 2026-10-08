@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.RowConstraints?>
+<?import javafx.scene.layout.VBox?>
+
+<!--
+  主窗口结构：
+    top    顶部工具栏（标题 / 打开 / 导出 / 视图切换 / 重置视图）
+    center 三栏网格：左 30% 参数面板，右 70% 并排两张图；最下面一条通栏横条
+    bottom 底部状态栏（深度范围 / 层数 / 缩放倍数 / 状态消息）
+
+  所有样式都在 app.css 里，这里不写内联样式。
+-->
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:id="appRoot"
+            fx:controller="com.example.demo.ui.MainController">
+
+    <top>
+        <HBox styleClass="app-toolbar" alignment="CENTER_LEFT" spacing="8">
+            <children>
+                <Label styleClass="title" text="井壁地层剖面图"/>
+
+                <Region HBox.hgrow="ALWAYS"/>
+
+                <Button styleClass="tool-button" text="打开…"
+                        onAction="#openFile"/>
+                <Button styleClass="tool-button" text="导出 PNG"
+                        onAction="#exportPng"/>
+
+                <Button fx:id="splitViewButton" styleClass="tool-button" text="并排"
+                        onAction="#showSplitView"/>
+                <Button fx:id="lineViewButton" styleClass="tool-button" text="线框"
+                        onAction="#showLineView"/>
+                <Button fx:id="colorViewButton" styleClass="tool-button" text="剖面"
+                        onAction="#showColorView"/>
+
+                <Button styleClass="tool-button" text="重置视图"
+                        onAction="#resetView"/>
+            </children>
+        </HBox>
+    </top>
+
+    <center>
+        <GridPane fx:id="mainGrid">
+            <columnConstraints>
+                <ColumnConstraints percentWidth="30"/>
+                <ColumnConstraints percentWidth="35"/>
+                <ColumnConstraints percentWidth="35"/>
+            </columnConstraints>
+            <rowConstraints>
+                <RowConstraints vgrow="ALWAYS"/>
+                <RowConstraints minHeight="62" prefHeight="62" maxHeight="62"/>
+            </rowConstraints>
+
+            <children>
+                <!-- 左 30%：参数面板，纵向占满整窗，底部是「确认数据」 -->
+                <VBox fx:id="parameterSlot" GridPane.columnIndex="0" GridPane.rowIndex="0"
+                      GridPane.rowSpan="2"/>
+
+                <!-- 右 70% 左半：只有线条的界面图 -->
+                <VBox fx:id="lineChartSlot" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+
+                <!-- 右 70% 右半：完整地层剖面图 -->
+                <VBox fx:id="colorChartSlot" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
+
+                <!-- 横条：左边对齐线框图，右边对齐彩图 -->
+                <GridPane fx:id="bottomBar" GridPane.columnIndex="1" GridPane.rowIndex="1"
+                          GridPane.columnSpan="2">
+                    <columnConstraints>
+                        <ColumnConstraints percentWidth="50"/>
+                        <ColumnConstraints percentWidth="50"/>
+                    </columnConstraints>
+                    <children>
+                        <HBox fx:id="confirmCell" GridPane.columnIndex="0"/>
+                        <HBox fx:id="spareCell" GridPane.columnIndex="1"/>
+                    </children>
+                </GridPane>
+            </children>
+        </GridPane>
+    </center>
+
+    <bottom>
+        <HBox styleClass="app-statusbar" alignment="CENTER_LEFT" spacing="10">
+            <children>
+                <Label fx:id="statusDepth" styleClass="msg" text="深度 —"/>
+                <Label styleClass="sep" text="│"/>
+                <Label fx:id="statusLayers" styleClass="msg" text="— 界面 · — 层"/>
+                <Label styleClass="sep" text="│"/>
+                <Label fx:id="statusZoom" styleClass="msg" text="缩放 1.00×"/>
+                <Label styleClass="sep" text="│"/>
+                <Label fx:id="statusMessage" styleClass="msg" text="就绪 · 点「打开…」载入参数文件"/>
+            </children>
+        </HBox>
+    </bottom>
+</BorderPane>
