@@ -4,10 +4,11 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.example</groupId>
-    <artifactId>demo</artifactId>
-    <version>1.0-SNAPSHOT</version>
-    <name>demo</name>
+    <groupId>com.stratigraphic</groupId>
+    <artifactId>stratigraphic-mapping</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <name>Stratigraphic Mapping</name>
+    <description>井壁地层剖面图：读入井眼与地层参数，绘制地层界面线框图与岩性剖面图</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -57,19 +58,26 @@
                     <release>17</release>
                 </configuration>
             </plugin>
+
+            <!-- JUnit 5 需要 surefire 3.x，否则 mvn test 跑不起来 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <executions>
                     <execution>
-                        <!-- Default configuration for running with: mvn clean javafx:run -->
+                        <!-- 用 mvn clean javafx:run 直接跑 -->
                         <id>default-cli</id>
                         <configuration>
-                            <mainClass>com.example.demo/com.example.demo.StratumApplication</mainClass>
-                            <launcher>app</launcher>
-                            <jlinkZipName>app</jlinkZipName>
-                            <jlinkImageName>app</jlinkImageName>
+                            <mainClass>com.stratigraphic.mapping/com.stratigraphic.mapping.StratigraphicMappingApplication</mainClass>
+                            <launcher>stratigraphic-mapping</launcher>
+                            <jlinkZipName>stratigraphic-mapping</jlinkZipName>
+                            <jlinkImageName>stratigraphic-mapping</jlinkImageName>
                             <noManPages>true</noManPages>
                             <stripDebug>true</stripDebug>
                             <noHeaderFiles>true</noHeaderFiles>

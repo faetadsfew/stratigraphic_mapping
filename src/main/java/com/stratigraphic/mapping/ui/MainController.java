@@ -1,10 +1,10 @@
-package com.example.demo.ui;
+package com.stratigraphic.mapping.ui;
 
-import com.example.demo.chart.SectionChart;
-import com.example.demo.chart.SectionColorChart;
-import com.example.demo.chart.SectionLineChart;
-import com.example.demo.io.StratumModelReader;
-import com.example.demo.model.StratumModel;
+import com.stratigraphic.mapping.chart.SectionChart;
+import com.stratigraphic.mapping.chart.SectionColorChart;
+import com.stratigraphic.mapping.chart.SectionLineChart;
+import com.stratigraphic.mapping.reader.StratumModelReader;
+import com.stratigraphic.mapping.model.StratumModel;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;

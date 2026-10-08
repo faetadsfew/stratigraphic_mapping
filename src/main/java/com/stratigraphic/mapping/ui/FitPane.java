@@ -1,4 +1,4 @@
-package com.example.demo.ui;
+package com.stratigraphic.mapping.ui;
 
 import javafx.beans.property.ReadOnlyDoubleProperty;
 import javafx.beans.property.ReadOnlyDoubleWrapper;

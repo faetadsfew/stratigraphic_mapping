@@ -1,4 +1,4 @@
-package com.example.demo.model;
+package com.stratigraphic.mapping.model;
 
 /**
  * 一条地层界面。

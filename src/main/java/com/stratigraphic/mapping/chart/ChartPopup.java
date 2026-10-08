@@ -1,4 +1,4 @@
-package com.example.demo.chart;
+package com.stratigraphic.mapping.chart;
 
 import javafx.scene.control.Label;
 import javafx.scene.layout.Pane;
