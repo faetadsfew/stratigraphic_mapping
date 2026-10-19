@@ -3,6 +3,10 @@ module com.stratigraphic.mapping {
     requires javafx.fxml;
     requires javafx.swing;
     requires java.desktop;
+    requires java.logging;
+    requires org.apache.logging.log4j.core;
+    requires org.apache.poi.poi;
+    requires org.apache.poi.ooxml;
 
     // GBK 等扩展字符集在这个模块里，读 GBK 编码的参数文件要用到；
     // 写在这里 jlink 打包时才会带上（否则打包后的程序读不了 GBK 文件）

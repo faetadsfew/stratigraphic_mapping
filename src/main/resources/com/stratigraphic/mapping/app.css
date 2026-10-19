@@ -83,6 +83,23 @@
     -fx-text-fill: #777777;
 }
 
+.data-summary {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: #4F5D6B;
+    -fx-line-spacing: 3px;
+}
+
+.model-note {
+    -fx-font-size: 11px;
+    -fx-text-fill: #6B7280;
+    -fx-background-color: #F3F6F9;
+    -fx-background-radius: 4;
+    -fx-border-color: #DDE4EB;
+    -fx-border-radius: 4;
+    -fx-padding: 8 10 8 10;
+    -fx-line-spacing: 2px;
+}
+
 /* ---------------- 折叠分组（TitledPane / Accordion） ---------------- */
 
 .titled-pane {

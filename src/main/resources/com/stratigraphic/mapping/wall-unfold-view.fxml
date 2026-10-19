@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.RowConstraints?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:id="appRoot"
+            fx:controller="com.stratigraphic.mapping.ui.WallUnfoldController">
+
+    <top>
+        <HBox styleClass="app-toolbar" alignment="CENTER_LEFT" spacing="8">
+            <children>
+                <Label styleClass="title" text="井壁展开图"/>
+                <Button styleClass="tool-button" text="井壁地层剖面图"
+                        onAction="#showMainView"/>
+
+                <Region HBox.hgrow="ALWAYS"/>
+
+                <Button styleClass="tool-button" text="打开 Excel…"
+                        onAction="#openExcel"/>
+                <Button styleClass="tool-button" text="导出 PNG"
+                        onAction="#exportPng"/>
+                <Button styleClass="tool-button" text="重置视图"
+                        onAction="#resetView"/>
+            </children>
+        </HBox>
+    </top>
+
+    <center>
+        <GridPane fx:id="mainGrid">
+            <columnConstraints>
+                <ColumnConstraints percentWidth="30"/>
+                <ColumnConstraints percentWidth="70"/>
+            </columnConstraints>
+            <rowConstraints>
+                <RowConstraints vgrow="ALWAYS"/>
+            </rowConstraints>
+
+            <children>
+                <VBox fx:id="parameterSlot"
+                      GridPane.columnIndex="0"
+                      GridPane.rowIndex="0"/>
+
+                <VBox fx:id="chartSlot"
+                      GridPane.columnIndex="1"
+                      GridPane.rowIndex="0"
+                      styleClass="chart-slot">
+                    <children>
+                        <HBox styleClass="chart-header"
+                              alignment="CENTER_LEFT"
+                              spacing="8">
+                            <children>
+                                <Label styleClass="ch-title"
+                                       text="井壁模值展开图"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label styleClass="ch-tag"
+                                       text="AMPLITUDE"/>
+                            </children>
+                        </HBox>
+
+                        <StackPane fx:id="chartBox"
+                                   styleClass="chart-box"
+                                   VBox.vgrow="ALWAYS"/>
+                    </children>
+                </VBox>
+            </children>
+        </GridPane>
+    </center>
+
+    <bottom>
+        <HBox styleClass="app-statusbar"
+              alignment="CENTER_LEFT"
+              spacing="10">
+            <children>
+                <Label fx:id="statusData" styleClass="msg"
+                       text="数据：未载入"/>
+                <Label styleClass="sep" text="|"/>
+                <Label fx:id="statusRange" styleClass="msg"
+                       text="取井区域：—"/>
+                <Label styleClass="sep" text="|"/>
+                <Label fx:id="statusZoom" styleClass="msg"
+                       text="缩放 1.00×"/>
+                <Label styleClass="sep" text="|"/>
+                <Label fx:id="statusMessage" styleClass="msg"
+                       text="就绪 · 打开包含「模值」「相位」Sheet 的 Excel 文件"/>
+            </children>
+        </HBox>
+    </bottom>
+</BorderPane>
