@@ -12,7 +12,7 @@
 
 <!--
   主窗口结构：
-    top    顶部工具栏（标题 / 打开 / 导出 / 视图切换 / 重置视图）
+    top    顶部工具栏（标题 / 打开 / 视图切换 / 重置视图）
     center 三栏网格：左 30% 参数面板，右 70% 并排两张图；最下面一条通栏横条
     bottom 底部状态栏（深度范围 / 层数 / 缩放倍数 / 状态消息）
 
@@ -31,8 +31,6 @@
 
                 <Button styleClass="tool-button" text="打开…"
                         onAction="#openFile"/>
-                <Button styleClass="tool-button" text="导出 PNG"
-                        onAction="#exportPng"/>
 
                 <Button fx:id="splitViewButton" styleClass="tool-button" text="并排"
                         onAction="#showSplitView"/>
