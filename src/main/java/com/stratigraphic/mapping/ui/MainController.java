@@ -6,8 +6,11 @@ import com.stratigraphic.mapping.chart.SectionLineChart;
 import com.stratigraphic.mapping.reader.StratumModelReader;
 import com.stratigraphic.mapping.model.StratumModel;
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
@@ -19,6 +22,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
+import javafx.stage.Stage;
 
 import java.io.File;
 import java.io.IOException;
@@ -181,8 +185,29 @@ public final class MainController {
         confirmCell.setAlignment(Pos.CENTER);
         confirmCell.getChildren().setAll(left);
 
-        // 右半边是预留位，先不放东西
         spareCell.setAlignment(Pos.CENTER);
+        spareCell.getChildren().clear();
+    }
+
+    @FXML
+    private void openWallUnfold() {
+
+        try {
+            FXMLLoader loader = new FXMLLoader(MainController.class.getResource(
+                    "/com/stratigraphic/mapping/wall-unfold-view.fxml"));
+            Parent root = loader.load();
+
+            Scene scene = appRoot.getScene();
+            if (scene == null) {
+                throw new IllegalStateException("当前页面尚未挂载到窗口");
+            }
+            scene.setRoot(root);
+            if (scene.getWindow() instanceof Stage stage) {
+                stage.setTitle("井壁展开图");
+            }
+        } catch (IOException | IllegalStateException ex) {
+            error("打开井壁展开图失败：" + ex.getMessage());
+        }
     }
 
     // =========================================================
