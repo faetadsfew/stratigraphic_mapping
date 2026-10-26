@@ -153,7 +153,7 @@ public final class StratumModelReader {
             String value = text.substring(eq + 1).trim();
 
             switch (key) {
-                case "n" -> declaredCount = (int) parseNumber(value, lineNo, "界面个数 n");
+                case "n" -> declaredCount = parseCount(value, lineNo);
                 case "wellRadius" -> wellRadius = parseNumber(value, lineNo, "井眼半径 wellRadius");
                 case "wellRho" -> wellResistivity = parseNumber(value, lineNo, "井眼电阻率 wellRho");
                 case "rho" -> resistivities = parseList(value, lineNo, "层电阻率 rho");
@@ -210,6 +210,20 @@ public final class StratumModelReader {
             }
         }
         return out;
+    }
+
+    /** 解析界面个数 n：必须是 1 ~ {@link StratumModel#MAX_INTERFACES} 之间的整数。 */
+    private static int parseCount(String value, int lineNo) {
+
+        double v = parseNumber(value, lineNo, "界面个数 n");
+
+        if (!Double.isFinite(v) || v != Math.rint(v)
+                || v < 1 || v > StratumModel.MAX_INTERFACES) {
+            throw new IllegalArgumentException(
+                    "第 " + lineNo + " 行：界面个数 n 需要是 1 ~ "
+                            + StratumModel.MAX_INTERFACES + " 之间的整数");
+        }
+        return (int) v;
     }
 
     private static double parseNumber(String text, int lineNo, String what) {

@@ -16,6 +16,9 @@ import java.util.List;
 /**
  * 电阻率色标：固定画在图表右侧那一列里，不参与滚轮缩放，也不跟着拖动平移。
  *
+ * <p>色标按对数取样，下界是一个大于 0 的整齐数，所以色标最下面一档不是 0，
+ * 而是数据里最小的那一档电阻率；刻度也按对数等分。
+ *
  * <p>高度由 {@link FitPane} 按「刚好放得下」的图面高度给定，所以色标永远和图面一样高；
  * 两张图都留出同样宽的一列，可用区一样大，图面也就始终等大。
  */
@@ -38,9 +41,13 @@ public final class ColorBarPane extends Pane {
     private final List<Line> ticks = new ArrayList<>();
     private final List<Label> tickLabels = new ArrayList<>();
 
-    public ColorBarPane(double maxResistivity) {
+    /**
+     * @param minResistivity 数据里的最小电阻率 (Ω·m)
+     * @param maxResistivity 数据里的最大电阻率 (Ω·m)
+     */
+    public ColorBarPane(double minResistivity, double maxResistivity) {
 
-        this.scale = new ColorScale(maxResistivity);
+        this.scale = new ColorScale(minResistivity, maxResistivity);
         getStyleClass().add("color-bar");
         setMouseTransparent(true);
 
@@ -56,8 +63,10 @@ public final class ColorBarPane extends Pane {
         bar.setStrokeWidth(0.8);
         getChildren().add(bar);
 
-        double step = scale.max() / STEPS;
-        int decimals = SectionStyle.decimalsFor(step);
+        // 刻度按对数等分：下界 → 上界之间取 STEPS 段
+        double logMin = Math.log10(scale.min());
+        double logStep = (Math.log10(scale.max()) - logMin) / STEPS;
+        int decimals = SectionStyle.decimalsFor((scale.max() - scale.min()) / STEPS);
 
         for (int k = 0; k <= STEPS; k++) {
 
@@ -67,19 +76,24 @@ public final class ColorBarPane extends Pane {
             ticks.add(tick);
             getChildren().add(tick);
 
-            Label label = new Label(SectionStyle.formatTick(step * k, decimals));
+            double value = Math.pow(10, logMin + logStep * k);
+            Label label = new Label(SectionStyle.formatTick(value, decimals));
             label.setStyle(SectionStyle.muted(10));
             tickLabels.add(label);
             getChildren().add(label);
         }
     }
 
-    /** 色标带：低阻（浅）在下，高阻（深）在上。 */
+    /** 色标带：低阻（浅）在下，高阻（深）在上；取样点按对数等分。 */
     private LinearGradient gradient() {
+
+        double logMin = Math.log10(scale.min());
+        double logSpan = Math.log10(scale.max()) - logMin;
 
         Stop[] stops = new Stop[11];
         for (int i = 0; i <= 10; i++) {
-            stops[10 - i] = new Stop(1 - i / 10.0, scale.colorOf(scale.max() * i / 10.0));
+            double value = Math.pow(10, logMin + logSpan * i / 10.0);
+            stops[10 - i] = new Stop(1 - i / 10.0, scale.colorOf(value));
         }
         return new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, stops);
     }

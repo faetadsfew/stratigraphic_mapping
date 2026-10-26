@@ -5,14 +5,17 @@ import com.stratigraphic.mapping.chart.SectionColorChart;
 import com.stratigraphic.mapping.chart.SectionLineChart;
 import com.stratigraphic.mapping.reader.StratumModelReader;
 import com.stratigraphic.mapping.model.StratumModel;
+import javafx.embed.swing.SwingFXUtils;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.image.WritableImage;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
@@ -21,9 +24,11 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
+import javax.imageio.ImageIO;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -295,6 +300,33 @@ public final class MainController {
         }
     }
 
+    /** 把当前窗口截一张 PNG 存下来。 */
+    @FXML
+    private void exportPng() {
+
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("导出 PNG");
+        chooser.getExtensionFilters().setAll(
+                new FileChooser.ExtensionFilter("PNG 图片 (*.png)", "*.png"));
+
+        File file = chooser.showSaveDialog(window());
+        if (file == null) {
+            return;
+        }
+        if (!file.getName().toLowerCase().endsWith(".png")) {
+            file = new File(file.getAbsolutePath() + ".png");
+        }
+
+        try {
+            SnapshotParameters params = new SnapshotParameters();
+            params.setFill(Color.WHITE);
+            WritableImage image = appRoot.snapshot(params, null);
+            ImageIO.write(SwingFXUtils.fromFXImage(image, null), "png", file);
+            info("已导出 " + file.getName());
+        } catch (IOException ex) {
+            error("导出失败：" + ex.getMessage());
+        }
+    }
     /** 载入一份新参数：刷新左侧面板与线条图，并把右侧彩图清空等确认。 */
     private void showModel(StratumModel model, String source) {
 
@@ -362,7 +394,7 @@ public final class MainController {
 
     private void drawColorChart(StratumModel model) {
         colorFitPane = installChart(new SectionColorChart(model), colorChartBox,
-                new ColorBarPane(model.maxResistivity()));
+                new ColorBarPane(model.minResistivity(), model.maxResistivity()));
     }
 
     /**

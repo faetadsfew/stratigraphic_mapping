@@ -258,16 +258,21 @@ public final class SectionGeometry {
         return count;
     }
 
-    /** 点 (x, y) 所在层的下界界面夹角（度）；没有界面时返回 NaN。 */
+    /**
+     * 第 {@code layer} 层（0 表示最浅的一层）在横坐标 {@code x} 处的
+     * 下界（更深一侧）界面夹角，单位度。
+     *
+     * <p>最深的一层下面没有界面，返回 {@link Double#NaN}。
+     */
     public double layerAngle(int layer, double x) {
 
-        if (interfaces.isEmpty()) {
+        // 有效层号是 0 ~ interfaces.size()，但最深一层没有下界界面
+        if (layer < 0 || layer >= interfaces.size()) {
             return Double.NaN;
         }
 
         int[] order = orderAt(x);
-        int idx = layer <= 0 ? order[0] : order[layer - 1];
-        return interfaces.get(idx).angle();
+        return interfaces.get(order[layer]).angle();
     }
 
     /**

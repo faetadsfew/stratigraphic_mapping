@@ -10,6 +10,9 @@ import java.util.List;
  */
 public final class StratumModel {
 
+    /** 界面个数上限：界面太多会让绘制明显变慢，也防止误输入。 */
+    public static final int MAX_INTERFACES = 60;
+
     private final double wellRadius;
     private final double wellResistivity;
     private final List<StratumInterface> interfaces;
@@ -28,6 +31,9 @@ public final class StratumModel {
 
         check(!interfaces.isEmpty(),
                 "至少需要 1 条界面");
+
+        check(interfaces.size() <= MAX_INTERFACES,
+                "界面最多 " + MAX_INTERFACES + " 条，实际给了 " + interfaces.size() + " 条");
 
         for (int i = 0; i < interfaces.size(); i++) {
             StratumInterface s = interfaces.get(i);
@@ -107,5 +113,11 @@ public final class StratumModel {
     public double maxResistivity() {
         return Math.max(wellResistivity,
                 resistivities.stream().mapToDouble(Double::doubleValue).max().orElse(0));
+    }
+
+    /** 全部电阻率里的最小值（含井眼），用作对数色标的下界，恒大于 0。 */
+    public double minResistivity() {
+        return Math.min(wellResistivity,
+                resistivities.stream().mapToDouble(Double::doubleValue).min().orElse(wellResistivity));
     }
 }

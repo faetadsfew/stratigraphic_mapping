@@ -26,15 +26,13 @@ import java.util.List;
 /**
  * 左侧参数面板：显示（并可修改）.txt 文件里的全部输入量。
  *
- * <p>显示的内容：
+ * <p>显示的内容分为两组：
  * <ul>
- *   <li>界面个数 n；</li>
- *   <li>井眼半径、井眼电阻率；</li>
- *   <li>n 组「界面与井轴的交点深度 / 夹角」；</li>
- *   <li>n+1 层层电阻率。</li>
+ *   <li>井数据：井眼半径、井眼电阻率；</li>
+ *   <li>地层数据：界面个数 n、n 组「界面与井轴的交点深度 / 夹角」、n+1 层层电阻率。</li>
  * </ul>
  *
- * <p>改动界面个数 n 后按回车或让输入框失去焦点，下方两张表会自动按新的条数增减；
+ * <p>改动界面个数 n 后按回车或让输入框失去焦点，下方地层数据表会自动按新的条数增减；
  * 也可以直接用「＋ 增加界面」「－ 删除界面」按钮，每加减一条界面，
  * 层电阻率会跟着加减一条（层数恒为 n + 1）。
  *
@@ -42,8 +40,8 @@ import java.util.List;
  */
 public final class ParameterPane extends BorderPane {
 
-    /** 界面个数的上限，纯粹防止误输入导致界面卡死。 */
-    private static final int MAX_INTERFACES = 60;
+    /** 界面个数的上限，与 {@link StratumModel#MAX_INTERFACES} 保持一致。 */
+    private static final int MAX_INTERFACES = StratumModel.MAX_INTERFACES;
 
     private final TextField countField = new TextField();
     private final TextField radiusField = new TextField();
@@ -224,29 +222,39 @@ public final class ParameterPane extends BorderPane {
 
     private Region buildForm() {
 
-        GridPane basics = new GridPane();
-        basics.setHgap(8);
-        basics.setVgap(7);
-        basics.getColumnConstraints().addAll(
+        GridPane wellGrid = new GridPane();
+        wellGrid.setHgap(8);
+        wellGrid.setVgap(7);
+        wellGrid.getColumnConstraints().addAll(
                 column(104, HPos.LEFT), column(120, HPos.LEFT));
 
-        basics.add(caption("界面个数 n"), 0, 0);
-        basics.add(countField, 1, 0);
-        basics.add(caption("井眼半径 / m"), 0, 1);
-        basics.add(radiusField, 1, 1);
-        basics.add(caption("井眼电阻率 / Ω·m"), 0, 2);
-        basics.add(wellRhoField, 1, 2);
+        wellGrid.add(caption("井眼半径 / m"), 0, 0);
+        wellGrid.add(radiusField, 1, 0);
+        wellGrid.add(caption("井眼电阻率 / Ω·m"), 0, 1);
+        wellGrid.add(wellRhoField, 1, 1);
 
-        for (TextField field : new TextField[]{countField, radiusField, wellRhoField}) {
+        for (TextField field : new TextField[]{radiusField, wellRhoField}) {
             field.setPrefWidth(120);
             field.getStyleClass().add("form-input");
             restrictToNumber(field);
         }
 
-        // 井眼半径 / 电阻率改一下就刷新状态栏；
-        // n 只在回车或失焦时通过 applyCount 生效，不然边打字边重排两张表会很乱
+        // 井眼半径 / 电阻率改一下就刷新状态栏
         radiusField.textProperty().addListener((o, was, is) -> onDataChanged.run());
         wellRhoField.textProperty().addListener((o, was, is) -> onDataChanged.run());
+
+        GridPane formationSettings = new GridPane();
+        formationSettings.setHgap(8);
+        formationSettings.setVgap(7);
+        formationSettings.getColumnConstraints().addAll(
+                column(104, HPos.LEFT), column(120, HPos.LEFT));
+
+        formationSettings.add(caption("界面个数 n"), 0, 0);
+        formationSettings.add(countField, 1, 0);
+
+        countField.setPrefWidth(120);
+        countField.getStyleClass().add("form-input");
+        restrictToNumber(countField);
 
         // 改完 n 之后按回车、或点到别处，就按新的条数重排下面的表
         countField.setOnAction(e -> applyCount());
@@ -265,22 +273,36 @@ public final class ParameterPane extends BorderPane {
         HBox interfaceActions = new HBox(6, addInterfaceButton, removeInterfaceButton);
         interfaceActions.setAlignment(Pos.CENTER_LEFT);
 
-        TitledPane wellSection = new TitledPane("井眼参数", basics);
+        // 增减界面的按钮跟「界面个数 n」放在一起，界面表上方只留标题，
+        // 这样界面表和电阻率表的顶部（含表头）才能对齐
+        formationSettings.add(interfaceActions, 0, 1, 2, 1);
+
+        Label interfaceTitle = new Label("地层界面");
+        interfaceTitle.getStyleClass().add("section-title");
+
+        Label rhoTitle = new Label("层电阻率");
+        rhoTitle.getStyleClass().add("section-title");
+
+        VBox interfaceBlock = new VBox(6, interfaceTitle, interfaceGrid);
+        VBox rhoBlock = new VBox(6, rhoTitle, layerGrid);
+
+        // 地层界面表与层电阻率表并排放到同一行，顶部对齐
+        HBox tablesRow = new HBox(10, interfaceBlock, rhoBlock);
+        tablesRow.setAlignment(Pos.TOP_LEFT);
+
+        VBox formationContent = new VBox(10, formationSettings, tablesRow);
+
+        TitledPane wellSection = new TitledPane("井数据", wellGrid);
         wellSection.getStyleClass().add("titled-pane");
 
-        TitledPane interfaceSection = new TitledPane("地层界面",
-                new VBox(6, interfaceActions, interfaceGrid));
-        interfaceSection.getStyleClass().add("titled-pane");
+        TitledPane formationSection = new TitledPane("地层数据", formationContent);
+        formationSection.getStyleClass().add("titled-pane");
 
-        TitledPane rhoSection = new TitledPane("层电阻率", layerGrid);
-        rhoSection.getStyleClass().add("titled-pane");
+        Accordion accordion = new Accordion(wellSection, formationSection);
 
-        Accordion accordion = new Accordion(wellSection, interfaceSection, rhoSection);
-
-        // TitledPane 默认是展开的，三个都显式收起来：一进来是折叠状态，点标题才展开
+        // TitledPane 默认是展开的，这里显式收起来：一进来是折叠状态，点标题才展开
         wellSection.setExpanded(false);
-        interfaceSection.setExpanded(false);
-        rhoSection.setExpanded(false);
+        formationSection.setExpanded(false);
         accordion.setExpandedPane(null);
 
         VBox form = new VBox(4, accordion);
@@ -316,7 +338,7 @@ public final class ParameterPane extends BorderPane {
     }
 
     // =========================================================
-    // 两张表的生成
+    // 地层数据表格的生成
     // =========================================================
 
     private void applyCount() {
@@ -431,7 +453,7 @@ public final class ParameterPane extends BorderPane {
         interfaceGrid.setHgap(8);
         interfaceGrid.setVgap(5);
         interfaceGrid.getColumnConstraints().setAll(
-                column(44, HPos.LEFT), column(112, HPos.LEFT), column(104, HPos.LEFT));
+                column(36, HPos.LEFT), flexColumn(70, HPos.LEFT), flexColumn(62, HPos.LEFT));
 
         interfaceGrid.add(header("序号"), 0, 0);
         interfaceGrid.add(header("交点深度 z / m"), 1, 0);
@@ -439,8 +461,8 @@ public final class ParameterPane extends BorderPane {
 
         for (int i = 0; i < count; i++) {
 
-            TextField depth = numberField(at(depths, i), 112);
-            TextField angle = numberField(at(angles, i), 104);
+            TextField depth = numberField(at(depths, i), 88);
+            TextField angle = numberField(at(angles, i), 76);
 
             depthFields.add(depth);
             angleFields.add(angle);
@@ -458,14 +480,14 @@ public final class ParameterPane extends BorderPane {
         layerGrid.setHgap(8);
         layerGrid.setVgap(5);
         layerGrid.getColumnConstraints().setAll(
-                column(44, HPos.LEFT), column(132, HPos.LEFT));
+                column(36, HPos.LEFT), flexColumn(80, HPos.LEFT));
 
         layerGrid.add(header("层号"), 0, 0);
         layerGrid.add(header("R0 / (Ω·m)"), 1, 0);
 
         for (int i = 0; i < count + 1; i++) {
 
-            TextField rho = numberField(at(rhos, i), 132);
+            TextField rho = numberField(at(rhos, i), 96);
             rhoFields.add(rho);
 
             layerGrid.add(indexLabel(String.valueOf(i + 1)), 0, i + 1);
@@ -544,6 +566,7 @@ public final class ParameterPane extends BorderPane {
 
         TextField field = new TextField(value == null ? "" : value);
         field.setPrefWidth(width);
+        field.setMaxWidth(Double.MAX_VALUE);
         field.getStyleClass().add("form-input");
         restrictToNumber(field);
 
@@ -589,6 +612,19 @@ public final class ParameterPane extends BorderPane {
     private static ColumnConstraints column(double width, HPos alignment) {
 
         ColumnConstraints constraints = new ColumnConstraints(width);
+        constraints.setHalignment(alignment);
+        return constraints;
+    }
+
+    /**
+     * 数值列：只给最小宽度，多出来的宽度由它撑开；面板变窄时优先压缩它，
+     * 这样两张表并排也不会把输入框挤出可视区。
+     */
+    private static ColumnConstraints flexColumn(double minWidth, HPos alignment) {
+
+        ColumnConstraints constraints = new ColumnConstraints();
+        constraints.setMinWidth(minWidth);
+        constraints.setHgrow(Priority.ALWAYS);
         constraints.setHalignment(alignment);
         return constraints;
     }

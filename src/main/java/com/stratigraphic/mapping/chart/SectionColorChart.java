@@ -31,7 +31,7 @@ public final class SectionColorChart extends SectionChart {
 
         super(model, TITLE_H, MARGIN_BOTTOM);
 
-        this.scale = new ColorScale(model.maxResistivity());
+        this.scale = new ColorScale(model.minResistivity(), model.maxResistivity());
 
         // 按工程图顺序绘制，后画的盖住先画的
         drawLayers();
@@ -209,7 +209,12 @@ public final class SectionColorChart extends SectionChart {
         }
 
         int layer = geo.layerAt(x, y);
-        return String.format("深度 z: %.2f m%n角度 θ: %.1f°%n电阻率 ρ: %.0f",
-                depth, geo.layerAngle(layer, x), model.resistivityOf(layer));
+        double angle = geo.layerAngle(layer, x);
+
+        // 最深的一层没有下界界面，角度显示成破折号
+        String angleText = Double.isNaN(angle) ? "—" : String.format("%.1f°", angle);
+
+        return String.format("深度 z: %.2f m%n角度 θ: %s%n电阻率 ρ: %.0f",
+                depth, angleText, model.resistivityOf(layer));
     }
 }
