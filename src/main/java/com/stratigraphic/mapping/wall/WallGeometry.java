@@ -147,7 +147,7 @@ public final class WallGeometry {
                     "参数错误：%n"
                             + "当前取井区域需要的最浅 MD：%.8f m%n"
                             + "Excel 有效最浅 MD：%.8f m%n"
-                            + "请调整井斜角、上截面深度或取井长度。",
+                            + "请调整上截面深度或取井长度。",
                     requiredMinMd, data.minDepth()));
         }
 
@@ -156,7 +156,7 @@ public final class WallGeometry {
                     "参数错误：%n"
                             + "当前取井区域需要的最深 MD：%.8f m%n"
                             + "Excel 有效最深 MD：%.8f m%n"
-                            + "请调整井斜角、上截面深度或取井长度。",
+                            + "请调整上截面深度或取井长度。",
                     requiredMaxMd, data.maxDepth()));
         }
     }

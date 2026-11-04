@@ -33,7 +33,6 @@ public final class WallParameterPane extends BorderPane {
     public static final double DEFAULT_AMPLITUDE_COLOR_MIN = 24.0;
     public static final double DEFAULT_AMPLITUDE_COLOR_MAX = 27.0;
 
-    private final TextField inclinationField = new TextField("0");
     private final TextField upperMdField = new TextField();
     private final TextField intervalField = new TextField("0.5");
     private final ComboBox<CompassDirection> firstElectrodeBox =
@@ -86,12 +85,15 @@ public final class WallParameterPane extends BorderPane {
                 data.phaseMin(), data.phaseMax()));
 
         upperMdField.setText(format(data.minDepth() + 0.1, 6));
+        intervalField.setText("0.5");
+        firstElectrodeBox.setValue(CompassDirection.NORTH);
+        unfoldDirectionBox.setValue(UnfoldDirection.CLOCKWISE);
         resetColorRange();
     }
 
     public WallParameters toParameters() {
         return new WallParameters(
-                readNumber(inclinationField, "井斜角"),
+                0.0,
                 readNumber(upperMdField, "上截面中心深度"),
                 readNumber(intervalField, "取井长度"),
                 firstElectrodeBox.getValue(),
@@ -162,16 +164,11 @@ public final class WallParameterPane extends BorderPane {
                 "模值颜色范围", buildColorGrid());
         colorSection.getStyleClass().add("titled-pane");
 
-        TitledPane modelSection = new TitledPane(
-                "几何模型说明", buildModelNote());
-        modelSection.getStyleClass().add("titled-pane");
-
         Accordion accordion = new Accordion(
-                dataSection, geometrySection, colorSection, modelSection);
+                dataSection, geometrySection, colorSection);
         dataSection.setExpanded(true);
         geometrySection.setExpanded(false);
         colorSection.setExpanded(false);
-        modelSection.setExpanded(false);
 
         VBox form = new VBox(6, accordion);
         form.setPadding(new Insets(0, 14, 18, 14));
@@ -182,29 +179,6 @@ public final class WallParameterPane extends BorderPane {
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         VBox.setVgrow(scroll, Priority.ALWAYS);
         return scroll;
-    }
-
-    private static Label buildModelNote() {
-
-        Label note = new Label(
-                "坐标约定：X 正东、Y 正北、Z 向上，MD 沿井轴向下。"
-                        + "井轴取在南北竖直面内，"
-                        + "方向 d=(0, sin i, -cos i)，其中 i 为井斜角。"
-                        + "第 1 电极方向取所选罗盘方向在井筒横截面上的正交投影，"
-                        + "192 个电极在井筒圆周上等角分布（相邻 1.875°）。\n\n"
-                        + "水平截面与井筒的真实交线按 "
-                        + "r_H=R[n_xy+n_z·tan i·(0, 1)] 计算，"
-                        + "对应 MD=(R·n_z-z)/cos i；横向位置使用该椭圆的真实弧长，"
-                        + "不将 192 个点强制等分到椭圆上。像素点击时按电极和水平面高度"
-                        + "反算 MD，再从 Excel 做线性插值。上下水平截面在展开图中的"
-                        + "MD 边界随井壁方向呈正弦/余弦变化，斜井不会显示为固定矩形。\n\n"
-                        + "模型假设：当前取井段为直线井段，井筒半径为 R=0.1 m；"
-                        + "电极圆周等角、井径规则，未建模仪器旋转、"
-                        + "偏心、井径变化和井斜随深度变化。弧长按 192 个离散点计算，"
-                        + "对本项目当前展开图精度影响可忽略。");
-        note.setWrapText(true);
-        note.getStyleClass().add("model-note");
-        return note;
     }
 
     private GridPane buildGeometryGrid() {
@@ -224,14 +198,13 @@ public final class WallParameterPane extends BorderPane {
         unfoldDirectionBox.getStyleClass().add("form-input");
 
         int row = 0;
-        addRow(grid, row++, "井斜角 / °", inclinationField);
         addRow(grid, row++, "上截面中心 MD / m", upperMdField);
         addRow(grid, row++, "取井长度 / m", intervalField);
         addRow(grid, row++, "第 1 电极方向", firstElectrodeBox);
         addRow(grid, row, "电极展开方向", unfoldDirectionBox);
 
         for (TextField field : new TextField[]{
-                inclinationField, upperMdField, intervalField}) {
+                upperMdField, intervalField}) {
             field.setPrefWidth(132);
             field.getStyleClass().add("form-input");
             restrictToNumber(field);

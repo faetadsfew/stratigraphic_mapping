@@ -10,6 +10,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ColorScaleTest {
 
     @Test
+    void resistivityUsesTheSameYellowToRedPaletteAsWallAmplitude() {
+        ColorScale scale = new ColorScale(1, 100);
+        WallAmplitudeScale reference = new WallAmplitudeScale(1, 100);
+        assertEquals(Color.web("#FFF7B2"), scale.colorOf(1));
+        assertEquals(Color.web("#7F1D1D"), scale.colorOf(100));
+        for (double value : new double[]{1, 2, 5, 10, 20, 50, 100}) {
+            assertEquals(reference.colorOf(value), scale.colorOf(value));
+        }
+    }
+
+    @Test
     void boundsRoundToNiceNumbersAndTheLowerBoundStaysAboveZero() {
 
         ColorScale scale = new ColorScale(18, 90);

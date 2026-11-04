@@ -177,7 +177,7 @@ public final class SectionColorChart extends SectionChart {
                 2 * geo.wellRadiusPx(),
                 geo.figureHeight());
 
-        well.setFill(scale.colorOf(model.wellResistivity()));
+        well.setFill(Color.BLACK);
 
         getChildren().add(well);
     }

@@ -8,10 +8,8 @@ import com.stratigraphic.mapping.wall.WallGeometry;
 import com.stratigraphic.mapping.wall.WallParameters;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Parent;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -21,7 +19,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
-import javafx.stage.Stage;
 
 import javax.imageio.ImageIO;
 import java.io.File;
@@ -205,17 +202,7 @@ public final class WallUnfoldController {
     private void showMainView() {
 
         try {
-            FXMLLoader loader = new FXMLLoader(WallUnfoldController.class.getResource(
-                    "/com/stratigraphic/mapping/main-view.fxml"));
-            Parent root = loader.load();
-            javafx.scene.Scene scene = appRoot.getScene();
-            if (scene == null) {
-                throw new IllegalStateException("当前页面尚未挂载到窗口");
-            }
-            scene.setRoot(root);
-            if (scene.getWindow() instanceof Stage stage) {
-                stage.setTitle("井壁地层剖面图");
-            }
+            PageNavigation.show(appRoot, "wall-unfold-view.fxml", "main-view.fxml", "井壁地层剖面图");
         } catch (IOException | IllegalStateException ex) {
             error("打开井壁地层剖面图失败：" + ex.getMessage());
         }

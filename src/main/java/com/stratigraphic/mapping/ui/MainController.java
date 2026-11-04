@@ -7,11 +7,8 @@ import com.stratigraphic.mapping.reader.StratumModelReader;
 import com.stratigraphic.mapping.model.StratumModel;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Parent;
-import javafx.scene.Scene;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -26,7 +23,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
-import javafx.stage.Stage;
 
 import javax.imageio.ImageIO;
 import java.io.File;
@@ -198,18 +194,7 @@ public final class MainController {
     private void openWallUnfold() {
 
         try {
-            FXMLLoader loader = new FXMLLoader(MainController.class.getResource(
-                    "/com/stratigraphic/mapping/wall-unfold-view.fxml"));
-            Parent root = loader.load();
-
-            Scene scene = appRoot.getScene();
-            if (scene == null) {
-                throw new IllegalStateException("当前页面尚未挂载到窗口");
-            }
-            scene.setRoot(root);
-            if (scene.getWindow() instanceof Stage stage) {
-                stage.setTitle("井壁展开图");
-            }
+            PageNavigation.show(appRoot, "main-view.fxml", "wall-unfold-view.fxml", "井壁展开图");
         } catch (IOException | IllegalStateException ex) {
             error("打开井壁展开图失败：" + ex.getMessage());
         }

@@ -242,15 +242,14 @@ public final class WallUnfoldChart extends Pane {
         gc.setTextAlign(TextAlignment.LEFT);
         gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 12));
         gc.fillText(String.format(Locale.ROOT,
-                        "井斜 %.2f°  ·  1号电极 %s  ·  %s展开",
-                        geometry.parameters().inclinationDeg(),
+                        "1号电极 %s  ·  %s展开",
                         geometry.parameters().firstElectrodeDirection(),
                         geometry.parameters().unfoldDirection()),
                 MARGIN_LEFT, 24);
 
         gc.setFill(SectionStyle.TICK);
         gc.setFont(Font.font("Microsoft YaHei UI", 9));
-        gc.fillText("上下边界为两个水平截面与倾斜井壁的真实交线",
+        gc.fillText("上下截面垂直于井轴，按直井展开",
                 MARGIN_LEFT, 40);
     }
 

@@ -4,7 +4,15 @@ import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Node;
 import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.scene.control.Accordion;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.layout.GridPane;
+import com.stratigraphic.mapping.wall.WallData;
+import com.stratigraphic.mapping.wall.WallGeometry;
+import com.stratigraphic.mapping.wall.WallParameters;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
@@ -42,6 +50,34 @@ class WallUnfoldFxmlTest {
                 WallParameterPane.ColorRange range = parameterPane.colorRange();
                 assertEquals(24, range.min(), 1e-12);
                 assertEquals(27, range.max(), 1e-12);
+                new Scene(root, 1440, 900);
+                root.applyCss();
+                Accordion accordion = (Accordion) parameterPane.lookup(".accordion");
+                assertNotNull(accordion);
+                assertEquals(3, accordion.getPanes().size());
+                assertTrue(accordion.getPanes().stream()
+                        .noneMatch(pane -> pane.getText().equals("几何模型说明")));
+                GridPane geometryGrid = (GridPane) accordion.getPanes().get(1).getContent();
+                assertTrue(geometryGrid.getChildren().stream()
+                        .filter(node -> node instanceof Label)
+                        .map(node -> ((Label) node).getText())
+                        .noneMatch(text -> text.contains("井斜")));
+                double[][] amplitude = new double[2][WallData.ELECTRODE_COUNT];
+                for (double[] row : amplitude) {
+                    java.util.Arrays.fill(row, 25.0);
+                }
+                WallData data = new WallData(Path.of("test.xlsx"),
+                        new double[]{100, 101},
+                        amplitude,
+                        new double[2][WallData.ELECTRODE_COUNT]);
+                parameterPane.setData(data, "test.xlsx");
+                WallParameters parameters = parameterPane.toParameters();
+                assertEquals(0.0, parameters.inclinationDeg());
+                WallGeometry geometry = new WallGeometry(data, parameters);
+                for (int electrode = 0; electrode < WallData.ELECTRODE_COUNT; electrode++) {
+                    assertEquals(parameters.upperCenterMd(), geometry.topMdAtElectrode(electrode), 1e-10);
+                    assertEquals(parameters.lowerCenterMd(), geometry.bottomMdAtElectrode(electrode), 1e-10);
+                }
             } catch (Throwable throwable) {
                 failure.set(throwable);
             } finally {

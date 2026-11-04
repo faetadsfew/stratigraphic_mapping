@@ -11,19 +11,14 @@ import javafx.scene.paint.Color;
  */
 public final class ColorScale {
 
-    /** 11 级调色板，浅 → 深。 */
     private static final Color[] PALETTE = {
-            Color.web("#FEEFE0"),
-            Color.web("#F7D0A6"),
-            Color.web("#E3B482"),
-            Color.web("#CC9961"),
-            Color.web("#B48044"),
-            Color.web("#9B682B"),
-            Color.web("#805216"),
-            Color.web("#643E0A"),
-            Color.web("#492B05"),
-            Color.web("#2F1A01"),
-            Color.web("#180900")
+            Color.web("#FFF7B2"),
+            Color.web("#FDE68A"),
+            Color.web("#FBBF24"),
+            Color.web("#F97316"),
+            Color.web("#EA580C"),
+            Color.web("#C81E1E"),
+            Color.web("#7F1D1D")
     };
 
     private final double min;

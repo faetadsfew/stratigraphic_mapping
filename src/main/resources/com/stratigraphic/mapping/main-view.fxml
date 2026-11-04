@@ -25,7 +25,7 @@
     <top>
         <HBox styleClass="app-toolbar" alignment="CENTER_LEFT" spacing="8">
             <children>
-                <Label styleClass="title" text="井壁地层剖面图"/>
+                <Button styleClass="tool-button, active" text="井壁地层剖面图"/>
                 <Button styleClass="tool-button" text="井壁展开图"
                         onAction="#openWallUnfold"/>
 
