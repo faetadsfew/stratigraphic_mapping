@@ -3,7 +3,7 @@ package com.stratigraphic.mapping.model;
 import java.util.List;
 
 /**
- * 地层剖面模型：井眼参数 + n 条界面 + n+1 层电阻率。
+ * 地层剖面模型：井眼参数 + 统一倾角 + n 条界面 + n+1 层电阻率 + 裂缝。
  *
  * <p>界面把井轴切成 n + 1 段，所以电阻率的个数恒为 n + 1。
  * 电阻率列表按深度由浅到深排列，第 i 层位于第 i 条界面之上。
@@ -15,19 +15,35 @@ public final class StratumModel {
 
     private final double wellRadius;
     private final double wellResistivity;
+    private final double dipAngle;
     private final List<StratumInterface> interfaces;
     private final List<Double> resistivities;
+    private final List<Fracture> fractures;
 
     public StratumModel(double wellRadius,
                         double wellResistivity,
+                        double dipAngle,
                         List<StratumInterface> interfaces,
                         List<Double> resistivities) {
+        this(wellRadius, wellResistivity, dipAngle,
+                interfaces, resistivities, List.of());
+    }
+
+    public StratumModel(double wellRadius,
+                        double wellResistivity,
+                        double dipAngle,
+                        List<StratumInterface> interfaces,
+                        List<Double> resistivities,
+                        List<Fracture> fractures) {
 
         check(wellRadius > 0 && Double.isFinite(wellRadius),
                 "井眼半径必须是大于 0 的数");
 
         check(wellResistivity > 0 && Double.isFinite(wellResistivity),
                 "井眼电阻率必须是大于 0 的数");
+
+        check(Double.isFinite(dipAngle) && dipAngle > 0 && dipAngle < 180,
+                "统一倾角必须在 0° 与 180° 之间");
 
         check(!interfaces.isEmpty(),
                 "至少需要 1 条界面");
@@ -39,8 +55,6 @@ public final class StratumModel {
             StratumInterface s = interfaces.get(i);
             check(Double.isFinite(s.depth()),
                     "第 " + (i + 1) + " 条界面的交点深度不是有效数字");
-            check(s.angle() > 0 && s.angle() < 180,
-                    "第 " + (i + 1) + " 条界面的夹角必须在 0° 与 180° 之间");
         }
 
         check(resistivities.size() == interfaces.size() + 1,
@@ -55,8 +69,18 @@ public final class StratumModel {
 
         this.wellRadius = wellRadius;
         this.wellResistivity = wellResistivity;
+        this.dipAngle = dipAngle;
         this.interfaces = List.copyOf(interfaces);
         this.resistivities = List.copyOf(resistivities);
+        this.fractures = List.copyOf(fractures);
+    }
+
+    /** 兼容旧调用：未给出统一倾角时按水平界面处理。 */
+    public StratumModel(double wellRadius,
+                        double wellResistivity,
+                        List<StratumInterface> interfaces,
+                        List<Double> resistivities) {
+        this(wellRadius, wellResistivity, 90, interfaces, resistivities);
     }
 
     private static void check(boolean ok, String message) {
@@ -75,6 +99,11 @@ public final class StratumModel {
         return wellResistivity;
     }
 
+    /** 全部地层界面共用的倾角 (°)；90° 表示水平。 */
+    public double dipAngle() {
+        return dipAngle;
+    }
+
     /** 界面列表，顺序与输入一致。 */
     public List<StratumInterface> interfaces() {
         return interfaces;
@@ -83,6 +112,11 @@ public final class StratumModel {
     /** 各层电阻率 (Ω·m)，长度 = 界面数 + 1。 */
     public List<Double> resistivities() {
         return resistivities;
+    }
+
+    /** 裂缝列表。 */
+    public List<Fracture> fractures() {
+        return fractures;
     }
 
     /** 界面个数 n。 */
@@ -109,15 +143,21 @@ public final class StratumModel {
         return interfaces.stream().mapToDouble(StratumInterface::depth).max().orElse(0);
     }
 
-    /** 全部电阻率里的最大值（含井眼），用来定色标范围。 */
+    /** 全部电阻率里的最大值（含井眼、地层和裂缝），用来定统一色标范围。 */
     public double maxResistivity() {
         return Math.max(wellResistivity,
-                resistivities.stream().mapToDouble(Double::doubleValue).max().orElse(0));
+                Math.max(
+                        resistivities.stream().mapToDouble(Double::doubleValue).max().orElse(0),
+                        fractures.stream().mapToDouble(Fracture::resistivity).max().orElse(0)));
     }
 
-    /** 全部电阻率里的最小值（含井眼），用作对数色标的下界，恒大于 0。 */
+    /** 全部电阻率里的最小值（含井眼、地层和裂缝），用作统一对数色标的下界。 */
     public double minResistivity() {
         return Math.min(wellResistivity,
-                resistivities.stream().mapToDouble(Double::doubleValue).min().orElse(wellResistivity));
+                Math.min(
+                        resistivities.stream().mapToDouble(Double::doubleValue)
+                                .min().orElse(wellResistivity),
+                        fractures.stream().mapToDouble(Fracture::resistivity)
+                                .min().orElse(wellResistivity)));
     }
 }

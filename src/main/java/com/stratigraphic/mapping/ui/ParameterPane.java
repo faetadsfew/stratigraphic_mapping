@@ -1,5 +1,6 @@
 package com.stratigraphic.mapping.ui;
 
+import com.stratigraphic.mapping.model.Fracture;
 import com.stratigraphic.mapping.model.StratumInterface;
 import com.stratigraphic.mapping.model.StratumModel;
 import javafx.geometry.HPos;
@@ -29,14 +30,16 @@ import java.util.List;
  * <p>显示的内容分为两组：
  * <ul>
  *   <li>井数据：井眼半径、井眼电阻率；</li>
- *   <li>地层数据：界面个数 n、n 组「界面与井轴的交点深度 / 夹角」、n+1 层层电阻率。</li>
+ *   <li>地层数据：界面个数 n、统一倾角、n 个界面深度、n+1 层层电阻率；</li>
+ *   <li>裂缝数据：交点深度、法向仰角、法向方位角和裂缝电阻率 R1；</li>
+ *   <li>井壁展开：两个展开点的深度位置。</li>
  * </ul>
  *
  * <p>改动界面个数 n 后按回车或让输入框失去焦点，下方地层数据表会自动按新的条数增减；
  * 也可以直接用「＋ 增加界面」「－ 删除界面」按钮，每加减一条界面，
  * 层电阻率会跟着加减一条（层数恒为 n + 1）。
  *
- * <p>面板最下面是「确认数据」按钮，点了会把当前数据（含增删过的界面）画成中间的线条图。
+ * <p>面板最下面是「生成图表」按钮，点了会更新中间的彩色剖面和右侧井壁展开图。
  */
 public final class ParameterPane extends BorderPane {
 
@@ -44,18 +47,23 @@ public final class ParameterPane extends BorderPane {
     private static final int MAX_INTERFACES = StratumModel.MAX_INTERFACES;
 
     private final TextField countField = new TextField();
+    private final TextField dipAngleField = new TextField();
     private final TextField radiusField = new TextField();
     private final TextField wellRhoField = new TextField();
 
+    private final TextField unfoldPointAField = new TextField();
+    private final TextField unfoldPointBField = new TextField();
+
     private final GridPane interfaceGrid = new GridPane();
     private final GridPane layerGrid = new GridPane();
+    private final VBox fractureRowsBox = new VBox(8);
 
     private final Label sourceLabel = new Label("（尚未载入参数文件）");
     private final Label messageLabel = new Label();
 
     private final List<TextField> depthFields = new ArrayList<>();
-    private final List<TextField> angleFields = new ArrayList<>();
     private final List<TextField> rhoFields = new ArrayList<>();
+    private final List<FractureRow> fractureRows = new ArrayList<>();
 
     private Runnable onOpenFile = () -> {
     };
@@ -83,14 +91,13 @@ public final class ParameterPane extends BorderPane {
         sourceLabel.setText(source);
 
         countField.setText(plain(model.interfaceCount()));
+        dipAngleField.setText(plain(model.dipAngle()));
         radiusField.setText(plain(model.wellRadius()));
         wellRhoField.setText(plain(model.wellResistivity()));
 
         List<String> depths = new ArrayList<>();
-        List<String> angles = new ArrayList<>();
         for (StratumInterface s : model.interfaces()) {
             depths.add(plain(s.depth()));
-            angles.add(plain(s.angle()));
         }
 
         List<String> rhos = new ArrayList<>();
@@ -98,7 +105,10 @@ public final class ParameterPane extends BorderPane {
             rhos.add(plain(rho));
         }
 
-        rebuildRows(model.interfaceCount(), depths, angles, rhos);
+        unfoldPointAField.setText(plain(round(model.minDepth() - 0.1)));
+        unfoldPointBField.setText(plain(round(model.maxDepth() + 0.1)));
+        rebuildRows(model.interfaceCount(), depths, rhos);
+        rebuildFractureRows(model.fractures());
     }
 
     /** 把面板里当前填的内容读成一个模型；有问题就抛 {@link IllegalArgumentException}。 */
@@ -108,18 +118,18 @@ public final class ParameterPane extends BorderPane {
 
         // n 改过但还没同步时，先把两张表的行数对齐
         if (count != depthFields.size()) {
-            rebuildRows(count, currentTexts(depthFields),
-                    currentTexts(angleFields), currentTexts(rhoFields));
+            rebuildRows(count, currentTexts(depthFields), currentTexts(rhoFields));
         }
 
         double radius = readNumber(radiusField.getText(), "井眼半径");
         double wellRho = readNumber(wellRhoField.getText(), "井眼电阻率");
+        double dipAngle = readNumber(dipAngleField.getText(), "统一倾角");
 
         List<StratumInterface> interfaces = new ArrayList<>();
         for (int i = 0; i < depthFields.size(); i++) {
             interfaces.add(new StratumInterface(
-                    readNumber(depthFields.get(i).getText(), "第 " + (i + 1) + " 条界面的交点深度"),
-                    readNumber(angleFields.get(i).getText(), "第 " + (i + 1) + " 条界面的夹角")));
+                    readNumber(depthFields.get(i).getText(),
+                            "第 " + (i + 1) + " 条界面的交点深度")));
         }
 
         List<Double> resistivities = new ArrayList<>();
@@ -127,7 +137,8 @@ public final class ParameterPane extends BorderPane {
             resistivities.add(readNumber(rhoFields.get(i).getText(), "第 " + (i + 1) + " 层电阻率"));
         }
 
-        return new StratumModel(radius, wellRho, interfaces, resistivities);
+        return new StratumModel(radius, wellRho, dipAngle,
+                interfaces, resistivities, readFractures());
     }
 
     /**
@@ -164,9 +175,20 @@ public final class ParameterPane extends BorderPane {
         this.onOpenFile = action;
     }
 
-    /** 点底部「确认数据」时回调：按面板里当前的数据重画中间的线条图。 */
+    /** 点底部「生成图表」时回调：更新彩色剖面和井壁展开图。 */
     public void setOnConfirmData(Runnable action) {
         this.onConfirmData = action;
+    }
+
+    /** 读取两个展开点的位置。A、B 可以倒序输入。 */
+    public UnfoldInterval toUnfoldInterval() {
+
+        double pointA = readNumber(unfoldPointAField.getText(), "展开点 A");
+        double pointB = readNumber(unfoldPointBField.getText(), "展开点 B");
+        if (Math.abs(pointB - pointA) < 1e-9) {
+            throw new IllegalArgumentException("展开点 A、B 不能相同");
+        }
+        return new UnfoldInterval(Math.min(pointA, pointB), Math.max(pointA, pointB));
     }
 
     public void showError(String message) {
@@ -237,24 +259,27 @@ public final class ParameterPane extends BorderPane {
             field.setPrefWidth(120);
             field.getStyleClass().add("form-input");
             restrictToNumber(field);
+            field.textProperty().addListener((o, was, is) -> onDataChanged.run());
         }
 
-        // 井眼半径 / 电阻率改一下就刷新状态栏
-        radiusField.textProperty().addListener((o, was, is) -> onDataChanged.run());
-        wellRhoField.textProperty().addListener((o, was, is) -> onDataChanged.run());
-
         GridPane formationSettings = new GridPane();
-        formationSettings.setHgap(8);
+        formationSettings.setHgap(6);
         formationSettings.setVgap(7);
         formationSettings.getColumnConstraints().addAll(
-                column(104, HPos.LEFT), column(120, HPos.LEFT));
+                column(58, HPos.LEFT), column(66, HPos.LEFT),
+                column(82, HPos.LEFT), column(66, HPos.LEFT));
 
-        formationSettings.add(caption("界面个数 n"), 0, 0);
+        formationSettings.add(caption("界面数 n"), 0, 0);
         formationSettings.add(countField, 1, 0);
+        formationSettings.add(caption("统一倾角 / °"), 2, 0);
+        formationSettings.add(dipAngleField, 3, 0);
 
-        countField.setPrefWidth(120);
-        countField.getStyleClass().add("form-input");
-        restrictToNumber(countField);
+        for (TextField field : new TextField[]{countField, dipAngleField}) {
+            field.setPrefWidth(66);
+            field.getStyleClass().add("form-input");
+            restrictToNumber(field);
+            field.textProperty().addListener((o, was, is) -> onDataChanged.run());
+        }
 
         // 改完 n 之后按回车、或点到别处，就按新的条数重排下面的表
         countField.setOnAction(e -> applyCount());
@@ -272,10 +297,7 @@ public final class ParameterPane extends BorderPane {
 
         HBox interfaceActions = new HBox(6, addInterfaceButton, removeInterfaceButton);
         interfaceActions.setAlignment(Pos.CENTER_LEFT);
-
-        // 增减界面的按钮跟「界面个数 n」放在一起，界面表上方只留标题，
-        // 这样界面表和电阻率表的顶部（含表头）才能对齐
-        formationSettings.add(interfaceActions, 0, 1, 2, 1);
+        formationSettings.add(interfaceActions, 0, 1, 4, 1);
 
         Label interfaceTitle = new Label("地层界面");
         interfaceTitle.getStyleClass().add("section-title");
@@ -298,11 +320,17 @@ public final class ParameterPane extends BorderPane {
         TitledPane formationSection = new TitledPane("地层数据", formationContent);
         formationSection.getStyleClass().add("titled-pane");
 
-        Accordion accordion = new Accordion(wellSection, formationSection);
+        TitledPane fractureSection = buildFractureSection();
+        TitledPane wallSection = buildUnfoldSection();
 
-        // TitledPane 默认是展开的，这里显式收起来：一进来是折叠状态，点标题才展开
+        Accordion accordion = new Accordion(
+                wellSection, formationSection, fractureSection, wallSection);
+
+        // 一进来保持折叠，参数较多时不会把左侧面板撑满
         wellSection.setExpanded(false);
         formationSection.setExpanded(false);
+        fractureSection.setExpanded(false);
+        wallSection.setExpanded(false);
         accordion.setExpandedPane(null);
 
         VBox form = new VBox(4, accordion);
@@ -311,21 +339,146 @@ public final class ParameterPane extends BorderPane {
         ScrollPane scroll = new ScrollPane(form);
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("form-scroll");
-        // 窗口拉得很窄时允许横向滚动，别把右边的输入框裁掉
-        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        // 左栏宽度固定，内容随栏宽收缩，不显示横向滚动条
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
 
         VBox.setVgrow(scroll, Priority.ALWAYS);
         return scroll;
     }
 
-    /** 底部：提示信息 + 「确认数据」按钮，按钮固定在面板最下面。 */
+    /** 裂缝参数：深度、法向角和 R1。 */
+    private TitledPane buildFractureSection() {
+
+        Label hint = new Label(
+                "裂缝采用 formation_G 格式：交点深度、法向仰角、法向方位角和 R1；"
+                        + "R1 同时用于两幅图中的裂缝颜色分级。");
+        hint.getStyleClass().add("hint");
+        hint.setWrapText(true);
+        hint.setMaxWidth(Double.MAX_VALUE);
+
+        Button addButton = smallButton("＋ 添加裂缝");
+        addButton.setOnAction(e -> {
+            if (fractureRows.size() >= 20) {
+                showError("裂缝最多 20 条");
+                return;
+            }
+            addFractureRow(null);
+            onDataChanged.run();
+        });
+
+        Button removeButton = smallButton("－ 删除最后一条");
+        removeButton.setOnAction(e -> {
+            if (!fractureRows.isEmpty()) {
+                removeFractureRow(fractureRows.get(fractureRows.size() - 1));
+            }
+        });
+
+        HBox actions = new HBox(6, addButton, removeButton);
+        actions.setAlignment(Pos.CENTER_LEFT);
+
+        VBox content = new VBox(8, hint, actions, fractureRowsBox);
+        TitledPane pane = new TitledPane("裂缝", content);
+        pane.getStyleClass().add("titled-pane");
+
+        if (fractureRows.isEmpty()) {
+            addFractureRow(null);
+        }
+        return pane;
+    }
+
+    private void rebuildFractureRows(List<Fracture> fractures) {
+
+        fractureRows.clear();
+        fractureRowsBox.getChildren().clear();
+
+        if (fractures.isEmpty()) {
+            addFractureRow(null);
+        } else {
+            for (Fracture fracture : fractures) {
+                addFractureRow(fracture);
+            }
+        }
+        renumberFractureRows();
+    }
+
+    private void addFractureRow(Fracture fracture) {
+
+        FractureRow row = new FractureRow(fracture);
+        row.deleteButton.setOnAction(e -> removeFractureRow(row));
+        fractureRows.add(row);
+        fractureRowsBox.getChildren().add(row.card);
+        renumberFractureRows();
+    }
+
+    private void removeFractureRow(FractureRow row) {
+
+        fractureRows.remove(row);
+        fractureRowsBox.getChildren().remove(row.card);
+        if (fractureRows.isEmpty()) {
+            addFractureRow(null);
+        }
+        renumberFractureRows();
+        onDataChanged.run();
+    }
+
+    private void renumberFractureRows() {
+        for (int i = 0; i < fractureRows.size(); i++) {
+            fractureRows.get(i).title.setText("裂缝 " + (i + 1));
+        }
+    }
+
+    private List<Fracture> readFractures() {
+
+        List<Fracture> fractures = new ArrayList<>();
+        for (int i = 0; i < fractureRows.size(); i++) {
+            Fracture fracture = fractureRows.get(i).toFracture(i + 1);
+            if (fracture != null) {
+                fractures.add(fracture);
+            }
+        }
+        return fractures;
+    }
+
+    /** 井壁展开参数：仅输入两个点的位置。 */
+    private TitledPane buildUnfoldSection() {
+
+        Label hint = new Label(
+                "展开图只使用当前井眼半径、统一倾角和界面深度，"
+                        + "绘制 A、B 两点之间的彩色井壁展开图。");
+        hint.getStyleClass().add("hint");
+        hint.setWrapText(true);
+        hint.setMaxWidth(Double.MAX_VALUE);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(8);
+        grid.setVgap(7);
+        grid.getColumnConstraints().addAll(
+                column(112, HPos.LEFT), column(132, HPos.LEFT));
+
+        addRow(grid, 0, "展开点 A / m", unfoldPointAField);
+        addRow(grid, 1, "展开点 B / m", unfoldPointBField);
+
+        for (TextField field : new TextField[]{unfoldPointAField, unfoldPointBField}) {
+            field.setPrefWidth(132);
+            field.setMaxWidth(Double.MAX_VALUE);
+            field.getStyleClass().add("form-input");
+            restrictToNumber(field);
+        }
+
+        VBox content = new VBox(8, hint, grid);
+        TitledPane pane = new TitledPane("井壁展开区间", content);
+        pane.getStyleClass().add("titled-pane");
+        return pane;
+    }
+
+    /** 底部：提示信息 + 「生成图表」按钮，按钮固定在面板最下面。 */
     private Region buildFooter() {
 
         messageLabel.setWrapText(true);
         messageLabel.setPadding(new Insets(8, 14, 4, 14));
         messageLabel.setMinHeight(Region.USE_PREF_SIZE);
 
-        Button confirmDataButton = new Button("确认数据");
+        Button confirmDataButton = new Button("生成图表");
         confirmDataButton.getStyleClass().add("primary-button");
         confirmDataButton.setMaxWidth(Double.MAX_VALUE);
         confirmDataButton.setOnAction(e -> onConfirmData.run());
@@ -343,6 +496,12 @@ public final class ParameterPane extends BorderPane {
 
     private void applyCount() {
 
+        // 初始空白状态不因焦点离开而弹错
+        if (countField.getText().isBlank() && depthFields.isEmpty()) {
+            onDataChanged.run();
+            return;
+        }
+
         int count;
         try {
             count = readCount();
@@ -352,8 +511,7 @@ public final class ParameterPane extends BorderPane {
         }
 
         if (count != depthFields.size()) {
-            rebuildRows(count, currentTexts(depthFields),
-                    currentTexts(angleFields), currentTexts(rhoFields));
+            rebuildRows(count, currentTexts(depthFields), currentTexts(rhoFields));
             clearMessage();
         }
 
@@ -371,7 +529,6 @@ public final class ParameterPane extends BorderPane {
     private void addInterface() {
 
         List<String> depths = currentTexts(depthFields);
-        List<String> angles = currentTexts(angleFields);
         List<String> rhos = currentTexts(rhoFields);
 
         int count = depths.size();
@@ -381,14 +538,13 @@ public final class ParameterPane extends BorderPane {
             return;
         }
 
-        // 新界面默认接在最后一条下面 0.2 m，夹角沿用上一条
+        // 新界面默认接在最后一条下面 0.2 m
         depths.add(plain(round(lastNumber(depths, 1.0) + 0.2)));
-        angles.add(plain(lastNumber(angles, 90)));
         // 新层默认沿用最深那层的电阻率
         rhos.add(rhos.isEmpty() ? "10" : rhos.get(rhos.size() - 1));
 
         countField.setText(String.valueOf(count + 1));
-        rebuildRows(count + 1, depths, angles, rhos);
+        rebuildRows(count + 1, depths, rhos);
         clearMessage();
         onDataChanged.run();
     }
@@ -404,17 +560,15 @@ public final class ParameterPane extends BorderPane {
         }
 
         List<String> depths = currentTexts(depthFields);
-        List<String> angles = currentTexts(angleFields);
         List<String> rhos = currentTexts(rhoFields);
 
         depths.remove(count - 1);
-        angles.remove(count - 1);
         if (!rhos.isEmpty()) {
             rhos.remove(rhos.size() - 1);
         }
 
         countField.setText(String.valueOf(count - 1));
-        rebuildRows(count - 1, depths, angles, rhos);
+        rebuildRows(count - 1, depths, rhos);
         clearMessage();
         onDataChanged.run();
     }
@@ -436,40 +590,34 @@ public final class ParameterPane extends BorderPane {
         return Math.round(value * 1e6) / 1e6;
     }
 
-    private void rebuildRows(int count, List<String> depths, List<String> angles, List<String> rhos) {
+    private void rebuildRows(int count, List<String> depths, List<String> rhos) {
 
         depthFields.clear();
-        angleFields.clear();
         rhoFields.clear();
 
-        rebuildInterfaceGrid(count, depths, angles);
+        rebuildInterfaceGrid(count, depths);
         rebuildLayerGrid(count, rhos);
     }
 
-    /** 界面表：序号 / 交点深度 / 夹角。 */
-    private void rebuildInterfaceGrid(int count, List<String> depths, List<String> angles) {
+    /** 界面表：序号 / 交点深度；倾角由上方统一设置。 */
+    private void rebuildInterfaceGrid(int count, List<String> depths) {
 
         interfaceGrid.getChildren().clear();
         interfaceGrid.setHgap(8);
         interfaceGrid.setVgap(5);
         interfaceGrid.getColumnConstraints().setAll(
-                column(36, HPos.LEFT), flexColumn(70, HPos.LEFT), flexColumn(62, HPos.LEFT));
+                column(36, HPos.LEFT), flexColumn(88, HPos.LEFT));
 
         interfaceGrid.add(header("序号"), 0, 0);
         interfaceGrid.add(header("交点深度 z / m"), 1, 0);
-        interfaceGrid.add(header("夹角 θ / °"), 2, 0);
 
         for (int i = 0; i < count; i++) {
 
-            TextField depth = numberField(at(depths, i), 88);
-            TextField angle = numberField(at(angles, i), 76);
-
+            TextField depth = numberField(at(depths, i), 100);
             depthFields.add(depth);
-            angleFields.add(angle);
 
             interfaceGrid.add(indexLabel(String.valueOf(i + 1)), 0, i + 1);
             interfaceGrid.add(depth, 1, i + 1);
-            interfaceGrid.add(angle, 2, i + 1);
         }
     }
 
@@ -584,6 +732,11 @@ public final class ParameterPane extends BorderPane {
         }));
     }
 
+    private static void addRow(GridPane grid, int row, String caption, javafx.scene.Node control) {
+        grid.add(caption(caption), 0, row);
+        grid.add(control, 1, row);
+    }
+
     private static Label caption(String text) {
         Label label = new Label(text);
         label.getStyleClass().add("field-caption");
@@ -627,5 +780,75 @@ public final class ParameterPane extends BorderPane {
         constraints.setHgrow(Priority.ALWAYS);
         constraints.setHalignment(alignment);
         return constraints;
+    }
+
+    private final class FractureRow {
+
+        private final VBox card = new VBox(6);
+        private final Label title = new Label();
+        private final Button deleteButton = smallButton("删除");
+
+        private final TextField depthField;
+        private final TextField elevationField;
+        private final TextField azimuthField;
+        private final TextField resistivityField;
+
+        private FractureRow(Fracture fracture) {
+
+            title.getStyleClass().add("section-title");
+
+            HBox header = new HBox(6, title, new Region(), deleteButton);
+            HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
+            header.setAlignment(Pos.CENTER_LEFT);
+
+            depthField = numberField(
+                    fracture == null ? "" : plain(fracture.depth()), 86);
+            elevationField = numberField(
+                    fracture == null ? "" : plain(fracture.normalElevationDeg()), 86);
+            azimuthField = numberField(
+                    fracture == null ? "" : plain(fracture.normalAzimuthDeg()), 86);
+            resistivityField = numberField(
+                    fracture == null ? "" : plain(fracture.resistivity()), 86);
+
+            GridPane grid = new GridPane();
+            grid.setHgap(7);
+            grid.setVgap(6);
+            grid.getColumnConstraints().addAll(
+                    column(90, HPos.LEFT), column(86, HPos.LEFT));
+
+            addRow(grid, 0, "交点深度 / m", depthField);
+            addRow(grid, 1, "法向仰角 / °", elevationField);
+            addRow(grid, 2, "法向方位角 / °", azimuthField);
+            addRow(grid, 3, "R1 / (Ω·m)", resistivityField);
+
+            card.getStyleClass().add("fracture-card");
+            card.getChildren().addAll(header, grid);
+        }
+
+        private Fracture toFracture(int index) {
+
+            if (allBlank()) {
+                return null;
+            }
+            return new Fracture(
+                    readNumber(depthField.getText(),
+                            "第 " + index + " 条裂缝交点深度"),
+                    readNumber(elevationField.getText(),
+                            "第 " + index + " 条裂缝法向仰角"),
+                    readNumber(azimuthField.getText(),
+                            "第 " + index + " 条裂缝法向方位角"),
+                    readNumber(resistivityField.getText(),
+                            "第 " + index + " 条裂缝电阻率 R1"));
+        }
+
+        private boolean allBlank() {
+            return depthField.getText().isBlank()
+                    && elevationField.getText().isBlank()
+                    && azimuthField.getText().isBlank()
+                    && resistivityField.getText().isBlank();
+        }
+    }
+
+    public record UnfoldInterval(double start, double end) {
     }
 }

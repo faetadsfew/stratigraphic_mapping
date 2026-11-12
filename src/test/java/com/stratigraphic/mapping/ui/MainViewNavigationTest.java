@@ -7,7 +7,7 @@ import javafx.geometry.Bounds;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.image.WritableImage;
 import org.junit.jupiter.api.Test;
 
@@ -18,15 +18,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MainViewNavigationTest {
 
     @Test
-    void mainViewAndWallViewSwitchWithinTheSameScene() throws Exception {
+    void mainViewShowsColorSectionAndWallUnfoldSideBySide() throws Exception {
 
         startToolkit();
 
@@ -47,44 +44,19 @@ class MainViewNavigationTest {
                 root.applyCss();
                 root.layout();
 
-                Parent mainRoot = scene.getRoot();
-                Button wallUnfoldButton = findButton(root, "井壁展开图");
-                assertNotNull(wallUnfoldButton, "第一层页面未找到井壁展开图按钮");
-                Button mainButton = findButton(root, "井壁地层剖面图");
-                assertNotNull(mainButton);
-                Bounds mainButtonBounds = mainButton.localToScene(mainButton.getBoundsInLocal());
-                Bounds unfoldButtonBounds = wallUnfoldButton.localToScene(wallUnfoldButton.getBoundsInLocal());
-                assertTrue(mainButtonBounds.getMaxX() < unfoldButtonBounds.getMinX());
-                assertTrue(mainButton.getStyleClass().contains("active"));
+                Label colorTitle = findLabel(root, "岩性剖面");
+                Label wallTitle = findLabel(root, "井壁展开图（彩色）");
+                assertNotNull(colorTitle, "主界面未找到彩色剖面标题");
+                assertNotNull(wallTitle, "主界面未找到井壁展开图标题");
+
+                Bounds colorBounds = colorTitle.localToScene(colorTitle.getBoundsInLocal());
+                Bounds wallBounds = wallTitle.localToScene(wallTitle.getBoundsInLocal());
+                assertTrue(colorBounds.getMinX() < wallBounds.getMinX(),
+                        "彩色剖面应位于井壁展开图左侧");
+                assertTrue(wallBounds.getMinX() < scene.getWidth(),
+                        "井壁展开图应位于主窗口内");
+
                 writeSnapshot(scene, "target/ui-main-snapshot.png");
-
-                wallUnfoldButton.fire();
-
-                Parent wallRoot = scene.getRoot();
-                assertNotSame(mainRoot, wallRoot, "点击后没有在当前窗口中切换页面");
-                assertNotNull(findButton(wallRoot, "井壁地层剖面图"),
-                        "井壁展开图标题旁未找到地层剖面图按钮");
-                wallRoot.applyCss();
-                wallRoot.layout();
-                assertButtonBounds(wallRoot, "井壁地层剖面图", mainButtonBounds);
-                assertButtonBounds(wallRoot, "井壁展开图", unfoldButtonBounds);
-                assertTrue(findButton(wallRoot, "井壁展开图").getStyleClass().contains("active"));
-                writeSnapshot(scene, "target/ui-unfold-snapshot.png");
-
-                Button backButton = findButton(wallRoot, "井壁地层剖面图");
-                backButton.fire();
-
-                assertNotSame(wallRoot, scene.getRoot(),
-                        "返回后没有在当前窗口中切换回默认页面");
-                assertNotNull(findButton(scene.getRoot(), "井壁展开图"),
-                        "返回默认页面后未找到井壁展开图按钮");
-                scene.getRoot().applyCss();
-                scene.getRoot().layout();
-                assertButtonBounds(scene.getRoot(), "井壁地层剖面图", mainButtonBounds);
-                assertButtonBounds(scene.getRoot(), "井壁展开图", unfoldButtonBounds);
-                assertSame(mainRoot, scene.getRoot(), "返回时应保留原页面及参数");
-                wallUnfoldButton.fire();
-                assertSame(wallRoot, scene.getRoot(), "再次打开时应保留展开图页面");
             } catch (Throwable throwable) {
                 failure.set(throwable);
             } finally {
@@ -92,30 +64,20 @@ class MainViewNavigationTest {
             }
         });
 
-        assertTrue(checked.await(15, TimeUnit.SECONDS), "第一层页面检查超时");
+        assertTrue(checked.await(15, TimeUnit.SECONDS), "主界面检查超时");
         if (failure.get() != null) {
-            throw new AssertionError("第一层页面跳转检查失败", failure.get());
+            throw new AssertionError("主界面三栏布局检查失败", failure.get());
         }
     }
 
-    private static void assertButtonBounds(Parent root, String text, Bounds expected) {
-        Button button = findButton(root, text);
-        assertNotNull(button);
-        Bounds actual = button.localToScene(button.getBoundsInLocal());
-        assertEquals(expected.getMinX(), actual.getMinX(), 0.01, text);
-        assertEquals(expected.getMinY(), actual.getMinY(), 0.01, text);
-        assertEquals(expected.getWidth(), actual.getWidth(), 0.01, text);
-        assertEquals(expected.getHeight(), actual.getHeight(), 0.01, text);
-    }
+    private static Label findLabel(Node node, String text) {
 
-    private static Button findButton(Node node, String text) {
-
-        if (node instanceof Button button && text.equals(button.getText())) {
-            return button;
+        if (node instanceof Label label && text.equals(label.getText())) {
+            return label;
         }
         if (node instanceof Parent parent) {
             for (Node child : parent.getChildrenUnmodifiable()) {
-                Button found = findButton(child, text);
+                Label found = findLabel(child, text);
                 if (found != null) {
                     return found;
                 }

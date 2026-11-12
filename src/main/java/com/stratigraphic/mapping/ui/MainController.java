@@ -2,9 +2,9 @@ package com.stratigraphic.mapping.ui;
 
 import com.stratigraphic.mapping.chart.SectionChart;
 import com.stratigraphic.mapping.chart.SectionColorChart;
-import com.stratigraphic.mapping.chart.SectionLineChart;
-import com.stratigraphic.mapping.reader.StratumModelReader;
+import com.stratigraphic.mapping.chart.WallLineUnfoldChart;
 import com.stratigraphic.mapping.model.StratumModel;
+import com.stratigraphic.mapping.reader.StratumModelReader;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;
@@ -14,9 +14,8 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.image.WritableImage;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.ColumnConstraints;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
@@ -28,115 +27,76 @@ import javax.imageio.ImageIO;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.List;
+import java.util.Locale;
 
 /**
- * 主窗口装配：左边 30% 参数面板，右边 70% 并排两张图，下面一条通栏横条；
- * 最上面是工具栏，最下面是状态栏。所有样式都在 app.css 里。
+ * 主窗口：左侧统一参数，中间彩色地层剖面，右侧彩色井壁展开图。
  *
- * <p>出图分两步：
- * <ol>
- *   <li>左侧面板底部的「确认数据」——把面板里当前填的（增删改过的）数据画成中间线条图；</li>
- *   <li>横条左边的「确认」——再画出右边的完整彩色地层剖面图。</li>
- * </ol>
- *
- * <p>两张图都支持滚轮缩放、按住拖动平移，放大后右上角会出现「重置」浮层按钮。
- *
- * <p>启动时不预读任何数据，左侧是空白表单，点「打开参数文件…」或直接填数都可以。
+ * <p>右侧只使用当前地层模型、统一倾角和左侧输入的两个展开点 A/B，
+ * 不读取模值、相位或其他额外井壁测量数据。
  */
 public final class MainController {
-
-    /** 视图模式：并排 / 只看线框 / 只看剖面。 */
-    private enum ViewMode {
-        SPLIT, LINE, COLOR
-    }
 
     @FXML
     private BorderPane appRoot;
     @FXML
     private VBox parameterSlot;
     @FXML
-    private VBox lineChartSlot;
-    @FXML
     private VBox colorChartSlot;
     @FXML
-    private GridPane mainGrid;
-    @FXML
-    private GridPane bottomBar;
-    @FXML
-    private HBox confirmCell;
-    @FXML
-    private HBox spareCell;
-
-    @FXML
-    private Button splitViewButton;
-    @FXML
-    private Button lineViewButton;
-    @FXML
-    private Button colorViewButton;
+    private VBox wallChartSlot;
 
     @FXML
     private Label statusDepth;
     @FXML
     private Label statusLayers;
     @FXML
+    private Label statusWall;
+    @FXML
     private Label statusZoom;
     @FXML
     private Label statusMessage;
 
     private final ParameterPane parameterPane = new ParameterPane();
-    private final Button confirmButton = new Button("确认");
 
-    private final StackPane lineChartBox = new StackPane();
     private final StackPane colorChartBox = new StackPane();
+    private final StackPane wallChartBox = new StackPane();
 
-    private final Label lineChartHint = new Label("点左侧「确认数据」后，在此显示地层界面线条图");
-    private final Label colorChartHint = new Label("编辑左侧参数后，点击「确认」在此显示完整地层剖面图");
-
-    /** 线条图有没有经过一次「确认数据」；没确认过就只显示提示。 */
-    private boolean lineChartConfirmed;
+    private final Label colorChartHint = new Label(
+            "载入参数或直接填写左侧数据后，点击「生成图表」显示彩色地层剖面图。");
+    private final Label wallChartHint = new Label(
+            "填写展开点 A/B 后点击「生成图表」，显示两点之间的彩色井壁展开图。");
 
     private final FileChooser fileChooser = new FileChooser();
 
-    /** 两张图当前的可缩放面板，重置视图时要一起还原。 */
-    private FitPane lineFitPane;
     private FitPane colorFitPane;
+    private FitPane wallFitPane;
 
     @FXML
     private void initialize() {
 
-        // ---- 左 30%：参数面板 ----
         parameterPane.setMinSize(0, 0);
         parameterSlot.setMinSize(0, 0);
-        parameterSlot.getChildren().add(parameterPane);
+        parameterSlot.getChildren().setAll(parameterPane);
 
-        // ---- 右 70% 左半：线条图 ----
-        lineChartSlot.setMinSize(0, 0);
-        lineChartSlot.getStyleClass().add("line-chart-slot");
-        prepareChartBox(lineChartBox);
-        lineChartSlot.getChildren().add(
-                wrapWithHeader("地层界面（线框）", "GEOMETRY", lineChartBox));
-
-        // ---- 右 70% 右半：完整剖面图，确认后才画 ----
         colorChartSlot.setMinSize(0, 0);
         colorChartSlot.getStyleClass().add("chart-slot");
         prepareChartBox(colorChartBox);
-        colorChartSlot.getChildren().add(
+        colorChartSlot.getChildren().setAll(
                 wrapWithHeader("岩性剖面", "COLOR", colorChartBox));
 
-        buildBottomBar();
-        showLineChartHint();
-        showColorChartHint();
-
-        confirmButton.setDefaultButton(true);
-        confirmButton.setOnAction(e -> confirm());
+        wallChartSlot.setMinSize(0, 0);
+        wallChartSlot.getStyleClass().add("chart-slot");
+        prepareChartBox(wallChartBox);
+        wallChartSlot.getChildren().setAll(
+                wrapWithHeader("井壁展开图（彩色）", "UNFOLD", wallChartBox));
 
         parameterPane.setOnOpenFile(this::openFile);
-        parameterPane.setOnConfirmData(this::confirmData);
+        parameterPane.setOnConfirmData(this::generateCharts);
         parameterPane.setOnDataChanged(this::refreshStatus);
 
-        // 不预读任何文件：这里就是空白状态，等用户打开参数文件或手工填
-        applyViewMode(ViewMode.SPLIT);
+        showColorChartHint();
+        showWallChartHint();
     }
 
     private void prepareChartBox(StackPane box) {
@@ -145,19 +105,18 @@ public final class MainController {
         VBox.setVgrow(box, Priority.ALWAYS);
     }
 
-    /** 给一张图套上固定的标题栏；标题栏不参与缩放，永远贴在顶上。 */
     private VBox wrapWithHeader(String title, String tag, StackPane chartBox) {
 
-        Label t = new Label(title);
-        t.getStyleClass().add("ch-title");
+        Label titleLabel = new Label(title);
+        titleLabel.getStyleClass().add("ch-title");
 
-        Label g = new Label(tag);
-        g.getStyleClass().add("ch-tag");
+        Label tagLabel = new Label(tag);
+        tagLabel.getStyleClass().add("ch-tag");
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        HBox header = new HBox(8, t, spacer, g);
+        HBox header = new HBox(8, titleLabel, spacer, tagLabel);
         header.getStyleClass().add("chart-header");
         header.setAlignment(Pos.CENTER_LEFT);
 
@@ -166,107 +125,31 @@ public final class MainController {
         return box;
     }
 
-    /**
-     * 底部通栏横条：左边放「确认」按钮，右半边留空，以后要加别的东西放那儿。
-     * 横条高度由 FXML 里那一行的 RowConstraints 固定，两张图的下边因此严格对齐。
-     */
-    private void buildBottomBar() {
-
-        bottomBar.getStyleClass().add("chart-footer");
-
-        confirmButton.getStyleClass().add("primary-button");
-        confirmButton.setPrefWidth(120);
-
-        Label hint = new Label("滚轮缩放 · 按住拖动平移");
-        hint.getStyleClass().add("hint");
-
-        VBox left = new VBox(4, confirmButton, hint);
-        left.setAlignment(Pos.CENTER);
-
-        confirmCell.setAlignment(Pos.CENTER);
-        confirmCell.getChildren().setAll(left);
-
-        spareCell.setAlignment(Pos.CENTER);
-        spareCell.getChildren().clear();
-    }
-
     @FXML
-    private void openWallUnfold() {
+    private void openWallResistivityView() {
 
         try {
-            PageNavigation.show(appRoot, "main-view.fxml", "wall-unfold-view.fxml", "井壁展开图");
+            PageNavigation.show(appRoot,
+                    "main-view.fxml",
+                    "wall-unfold-view.fxml",
+                    "井壁电阻率展开图");
         } catch (IOException | IllegalStateException ex) {
-            error("打开井壁展开图失败：" + ex.getMessage());
+            error("打开井壁电阻率展开图失败：" + ex.getMessage());
         }
     }
-
-    // =========================================================
-    // 视图切换
-    // =========================================================
-
-    @FXML
-    private void showSplitView() {
-        applyViewMode(ViewMode.SPLIT);
-    }
-
-    @FXML
-    private void showLineView() {
-        applyViewMode(ViewMode.LINE);
-    }
-
-    @FXML
-    private void showColorView() {
-        applyViewMode(ViewMode.COLOR);
-    }
-
-    /** 并排显示两张图，或者让其中一张占满右侧区域。 */
-    private void applyViewMode(ViewMode mode) {
-
-        boolean showLine = mode != ViewMode.COLOR;
-        boolean showColor = mode != ViewMode.LINE;
-
-        lineChartSlot.setVisible(showLine);
-        lineChartSlot.setManaged(showLine);
-        colorChartSlot.setVisible(showColor);
-        colorChartSlot.setManaged(showColor);
-
-        List<ColumnConstraints> columns = mainGrid.getColumnConstraints();
-        columns.get(1).setPercentWidth(showLine ? (showColor ? 35 : 70) : 0);
-        columns.get(2).setPercentWidth(showColor ? (showLine ? 35 : 70) : 0);
-
-        GridPane.setColumnIndex(lineChartSlot, 1);
-        GridPane.setColumnIndex(colorChartSlot, showLine ? 2 : 1);
-        GridPane.setColumnSpan(lineChartSlot, showColor ? 1 : 2);
-        GridPane.setColumnSpan(colorChartSlot, showLine ? 1 : 2);
-
-        markActive(splitViewButton, mode == ViewMode.SPLIT);
-        markActive(lineViewButton, mode == ViewMode.LINE);
-        markActive(colorViewButton, mode == ViewMode.COLOR);
-    }
-
-    private static void markActive(Button button, boolean active) {
-        button.getStyleClass().remove("active");
-        if (active) {
-            button.getStyleClass().add("active");
-        }
-    }
-
-    // =========================================================
-    // 数据来源
-    // =========================================================
 
     @FXML
     private void openFile() {
 
-        fileChooser.setTitle("选择参数文件");
+        fileChooser.setTitle("选择地层剖面参数文件");
         fileChooser.getExtensionFilters().setAll(
                 new FileChooser.ExtensionFilter("文本文件 (*.txt)", "*.txt"),
                 new FileChooser.ExtensionFilter("全部文件", "*.*"));
 
         if (fileChooser.getInitialDirectory() == null) {
-            File workingDir = new File(System.getProperty("user.dir"));
-            if (workingDir.isDirectory()) {
-                fileChooser.setInitialDirectory(workingDir);
+            File workingDirectory = new File(System.getProperty("user.dir"));
+            if (workingDirectory.isDirectory()) {
+                fileChooser.setInitialDirectory(workingDirectory);
             }
         }
 
@@ -276,16 +159,106 @@ public final class MainController {
         }
 
         try {
-            showModel(StratumModelReader.read(Path.of(file.getAbsolutePath())),
+            StratumModel model = StratumModelReader.read(Path.of(file.getAbsolutePath()));
+            parameterPane.setModel(model,
                     file.getName() + "    " + file.getAbsolutePath());
+            updateStatus(model);
+
+            // 载入只更新输入，不自动出图；等待用户点击「生成图表」。
+            showColorChartHint();
+            showWallChartHint();
+            statusZoom.setText("缩放 1.00×");
+            info("已载入地层参数，请检查输入后点击「生成图表」");
         } catch (IOException ex) {
-            error("读取文件失败：" + ex.getMessage());
+            error("读取参数文件失败：" + ex.getMessage());
         } catch (IllegalArgumentException ex) {
             error("参数文件有问题：" + ex.getMessage());
         }
     }
 
-    /** 把当前窗口截一张 PNG 存下来。 */
+    private void generateCharts() {
+
+        StratumModel model;
+        try {
+            model = parameterPane.toModel();
+        } catch (IllegalArgumentException ex) {
+            error(ex.getMessage());
+            return;
+        }
+
+        drawColorChart(model);
+        updateStatus(model);
+
+        try {
+            drawWallChart(model);
+            info("彩色剖面和彩色井壁展开图已按当前参数更新");
+        } catch (IllegalArgumentException ex) {
+            showWallChartHint();
+            error("彩色剖面已更新；井壁展开图未生成：" + ex.getMessage());
+        }
+    }
+
+    private void drawWallChart(StratumModel model) {
+
+        ParameterPane.UnfoldInterval interval = parameterPane.toUnfoldInterval();
+        WallLineUnfoldChart chart = new WallLineUnfoldChart(
+                model, interval.start(), interval.end());
+        wallFitPane = installChart(chart, wallChartBox, null);
+
+        statusWall.setText(String.format(Locale.ROOT,
+                "展开 %.2f – %.2f m · 彩色", interval.start(), interval.end()));
+    }
+
+    private void drawColorChart(StratumModel model) {
+        colorFitPane = installChart(
+                new SectionColorChart(model),
+                colorChartBox,
+                new ColorBarPane(model.minResistivity(), model.maxResistivity()));
+    }
+
+    /** 把图装进可缩放面板；右侧可挂不参与缩放的色标。 */
+    private FitPane installChart(Pane chart, StackPane chartBox, ColorBarPane colorBar) {
+
+        FitPane fit = new FitPane(chart);
+        fit.setMinSize(0, 0);
+
+        if (colorBar != null) {
+            fit.setRightInset(ColorBarPane.WIDTH);
+            if (chart instanceof SectionChart sectionChart) {
+                fit.setRightAccessory(colorBar,
+                        sectionChart.figureTop(), sectionChart.figureHeight());
+            }
+        }
+
+        Button reset = new Button("重置");
+        reset.getStyleClass().add("overlay-button");
+        reset.setOnAction(e -> fit.resetZoom());
+        reset.visibleProperty().bind(fit.zoomFactorProperty().greaterThan(1.001));
+
+        StackPane wrapper = new StackPane(fit, reset);
+        StackPane.setAlignment(reset, Pos.TOP_LEFT);
+        StackPane.setMargin(reset, new Insets(10));
+        chartBox.getChildren().setAll(wrapper);
+
+        fit.zoomFactorProperty().addListener((o, oldValue, newValue) ->
+                statusZoom.setText(String.format(Locale.ROOT,
+                        "缩放 %.2f×", newValue.doubleValue())));
+        statusZoom.setText("缩放 1.00×");
+        return fit;
+    }
+
+    @FXML
+    private void resetView() {
+
+        if (colorFitPane != null) {
+            colorFitPane.resetZoom();
+        }
+        if (wallFitPane != null) {
+            wallFitPane.resetZoom();
+        }
+        statusZoom.setText("缩放 1.00×");
+    }
+
     @FXML
     private void exportPng() {
 
@@ -298,7 +271,7 @@ public final class MainController {
         if (file == null) {
             return;
         }
-        if (!file.getName().toLowerCase().endsWith(".png")) {
+        if (!file.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
             file = new File(file.getAbsolutePath() + ".png");
         }
 
@@ -312,147 +285,20 @@ public final class MainController {
             error("导出失败：" + ex.getMessage());
         }
     }
-    /** 载入一份新参数：刷新左侧面板与线条图，并把右侧彩图清空等确认。 */
-    private void showModel(StratumModel model, String source) {
 
-        parameterPane.setModel(model, source);
-        info("已载入参数，点「确认数据」显示线条图");
-
-        updateStatus(model);
-
-        // 数据确认之前，两张图都只显示提示
-        lineChartConfirmed = false;
-        showLineChartHint();
-        showColorChartHint();
-    }
-
-    // =========================================================
-    // 第一步：确认数据 → 中间的线条图
-    // =========================================================
-
-    /** 左侧「确认数据」：按面板里当前的数据（含增删的界面）重画线条图。 */
-    private void confirmData() {
-
-        StratumModel model;
-        try {
-            model = parameterPane.toModel();
-        } catch (IllegalArgumentException ex) {
-            error(ex.getMessage());
-            return;
-        }
-
-        lineChartConfirmed = true;
-        drawLineChart(model);
-        updateStatus(model);
-        info("线条图已按当前数据更新");
-    }
-
-    // =========================================================
-    // 第二步：确认 → 右侧的完整剖面图
-    // =========================================================
-
-    private void confirm() {
-
-        StratumModel model;
-        try {
-            model = parameterPane.toModel();
-        } catch (IllegalArgumentException ex) {
-            error(ex.getMessage());
-            return;
-        }
-
-        // 线条图确认过才跟着一起刷新，避免两张图对不上；没确认过就还是提示
-        if (lineChartConfirmed) {
-            drawLineChart(model);
-        }
-        drawColorChart(model);
-
-        updateStatus(model);
-
-        info("已按当前参数出图");
-    }
-
-    private void drawLineChart(StratumModel model) {
-        // 右侧同样留出「色标」那一列，两张图的可用区一样大，图面才会等大
-        lineFitPane = installChart(new SectionLineChart(model), lineChartBox, null);
-    }
-
-    private void drawColorChart(StratumModel model) {
-        colorFitPane = installChart(new SectionColorChart(model), colorChartBox,
-                new ColorBarPane(model.minResistivity(), model.maxResistivity()));
-    }
-
-    /**
-     * 把一张图装进可缩放的面板：右侧留出固定一列，可以在里面挂一条不缩放的色标，
-     * 右上角再挂一个「重置」浮层按钮。
-     */
-    private FitPane installChart(SectionChart chart, StackPane chartBox, ColorBarPane colorBar) {
-
-        FitPane fit = new FitPane(chart);
-        fit.setRightInset(ColorBarPane.WIDTH);
-
-        if (colorBar != null) {
-            fit.setRightAccessory(colorBar, chart.figureTop(), chart.figureHeight());
-        }
-
-        Button reset = new Button("重置");
-        reset.getStyleClass().add("overlay-button");
-        reset.setOnAction(e -> fit.resetZoom());
-        reset.visibleProperty().bind(fit.zoomFactorProperty().greaterThan(1.001));
-
-        StackPane wrapper = new StackPane(fit, reset);
-        // 靠左上角摆，免得压住右侧固定列里的色标标题
-        StackPane.setAlignment(reset, Pos.TOP_LEFT);
-        StackPane.setMargin(reset, new Insets(10));
-        chartBox.getChildren().setAll(wrapper);
-
-        fit.zoomFactorProperty().addListener((o, ov, nv) ->
-                statusZoom.setText(String.format("缩放 %.2f×", nv.doubleValue())));
-
-        statusZoom.setText(String.format("缩放 %.2f×", 1.0));
-        return fit;
-    }
-
-    /** 工具栏「重置视图」：两张图都回到刚放得下的比例。 */
-    @FXML
-    private void resetView() {
-
-        if (lineFitPane != null) {
-            lineFitPane.resetZoom();
-        }
-        if (colorFitPane != null) {
-            colorFitPane.resetZoom();
-        }
-        statusZoom.setText(String.format("缩放 %.2f×", 1.0));
-    }
-
-    // =========================================================
-    // 底部状态栏
-    // =========================================================
-
-    /** 深度范围 / 层数 / 界面个数，只要数据变了就整块刷新。 */
     private void updateStatus(StratumModel model) {
-
-        statusDepth.setText(String.format("深度 %.2f – %.2f m", model.minDepth(), model.maxDepth()));
-        statusLayers.setText(model.interfaceCount() + " 界面 · " + model.layerCount() + " 层");
+        statusDepth.setText(String.format(Locale.ROOT,
+                "深度 %.2f – %.2f m", model.minDepth(), model.maxDepth()));
+        statusLayers.setText(String.format(Locale.ROOT,
+                "%d 界面 · %d 层 · 倾角 %.1f°",
+                model.interfaceCount(), model.layerCount(), model.dipAngle()));
     }
 
-    /**
-     * 左侧面板里任何一个数或条数变了都会走到这里：
-     * 静默重算一次状态栏，数据还没填完整就保持上一次的读数。
-     */
     private void refreshStatus() {
-
         StratumModel model = parameterPane.tryToModel();
         if (model != null) {
             updateStatus(model);
         }
-    }
-
-    /** 线条图还没出图时，格子里放一句提示。 */
-    private void showLineChartHint() {
-        showHint(lineChartBox, lineChartHint);
-        lineFitPane = null;
     }
 
     private void showColorChartHint() {
@@ -460,11 +306,16 @@ public final class MainController {
         colorFitPane = null;
     }
 
-    /** 把提示文字放进格子；样式类只加一次，反复调用不会重复堆叠。 */
+    private void showWallChartHint() {
+        showHint(wallChartBox, wallChartHint);
+        wallFitPane = null;
+        statusWall.setText("展开 A/B —");
+    }
+
     private static void showHint(StackPane box, Label hint) {
 
         hint.setWrapText(true);
-        hint.setMaxWidth(320);
+        hint.setMaxWidth(360);
         hint.setAlignment(Pos.CENTER);
 
         if (!hint.getStyleClass().contains("chart-hint")) {
@@ -472,10 +323,6 @@ public final class MainController {
         }
         box.getChildren().setAll(hint);
     }
-
-    // =========================================================
-    // 提示信息：面板提示和状态栏一起更新
-    // =========================================================
 
     private void info(String message) {
         parameterPane.showInfo(message);

@@ -1,8 +1,10 @@
 package com.stratigraphic.mapping.chart;
 
+import com.stratigraphic.mapping.model.Fracture;
 import com.stratigraphic.mapping.model.StratumInterface;
 import com.stratigraphic.mapping.model.StratumModel;
 import javafx.geometry.Point2D;
+import javafx.scene.Group;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
 import javafx.scene.shape.Polygon;
@@ -17,7 +19,7 @@ import java.util.List;
  *
  * <p>颜色表示电阻率：浅（低阻）→ 深（高阻）；对应的色标是 {@code ColorBarPane}，
  * 挂在图面右侧的固定列里，不参与这里的缩放。
- * 点击图面任意位置会弹出该处的深度、界面夹角与电阻率。
+ * 点击图面任意位置会弹出该处的深度、统一倾角与电阻率。
  */
 public final class SectionColorChart extends SectionChart {
 
@@ -37,6 +39,7 @@ public final class SectionColorChart extends SectionChart {
         drawLayers();
         drawInterfaces();
         drawWell();
+        drawFractures();
         drawDepthLabels();
         drawFrame();
         drawAxes();
@@ -113,8 +116,8 @@ public final class SectionColorChart extends SectionChart {
 
         double px = geo.axisX();
         double py = geo.zToY(s.depth());
-        double nx = SectionGeometry.normalX(s.angle());
-        double ny = SectionGeometry.normalY(s.angle());
+        double nx = SectionGeometry.normalX(geo.dipAngle());
+        double ny = SectionGeometry.normalY(geo.dipAngle());
 
         List<Point2D> out = new ArrayList<>();
         int n = poly.size();
@@ -154,12 +157,12 @@ public final class SectionColorChart extends SectionChart {
             StratumInterface s = interfaces.get(i);
 
             // 先铺一条半透明白晕，界面线压在深色地层上也看得清
-            Line glow = geo.createLine(geo.axisX(), geo.zToY(s.depth()), s.angle());
+            Line glow = geo.createLine(geo.axisX(), geo.zToY(s.depth()), geo.dipAngle());
             glow.setStroke(Color.web("#FFFFFF", 0.5));
             glow.setStrokeWidth(2.4);
             getChildren().add(glow);
 
-            Line line = geo.createLine(geo.axisX(), geo.zToY(s.depth()), s.angle());
+            Line line = geo.createLine(geo.axisX(), geo.zToY(s.depth()), geo.dipAngle());
             line.setStroke(SectionStyle.INTERFACE_LINE);
             line.setStrokeWidth(1.2);
 
@@ -177,9 +180,54 @@ public final class SectionColorChart extends SectionChart {
                 2 * geo.wellRadiusPx(),
                 geo.figureHeight());
 
-        well.setFill(Color.BLACK);
+        well.setFill(scale.colorOf(model.wellResistivity()));
+        well.setStroke(SectionStyle.WELL_OUTLINE);
+        well.setStrokeWidth(0.8);
 
         getChildren().add(well);
+    }
+
+    // ---------------- 裂缝 ----------------
+
+    private void drawFractures() {
+
+        if (model.fractures().isEmpty()) {
+            return;
+        }
+
+        Group fractureGroup = new Group();
+        fractureGroup.setClip(new Rectangle(
+                geo.figureLeft(), geo.figureTop(),
+                geo.figureWidth(), geo.figureHeight()));
+
+        for (Fracture fracture : model.fractures()) {
+            Line glow = fractureLine(fracture);
+            glow.setStroke(Color.web("#FFFFFF", 0.75));
+            glow.setStrokeWidth(7.5);
+            fractureGroup.getChildren().add(glow);
+
+            Line line = fractureLine(fracture);
+            line.setStroke(scale.colorOf(fracture.resistivity()));
+            line.setStrokeWidth(4.6);
+            fractureGroup.getChildren().add(line);
+        }
+
+        getChildren().add(fractureGroup);
+    }
+
+    /** 裂缝平面与剖面 y=0 的交线。 */
+    private Line fractureLine(Fracture fracture) {
+
+        if (Math.abs(FractureGeometry.normalZ(fracture)) < 1e-9) {
+            double x = geo.axisX();
+            return new Line(x, geo.figureTop(), x, geo.figureBottom());
+        }
+
+        double zLeft = FractureGeometry.sectionDepth(fracture, geo.leftOffsetM());
+        double zRight = FractureGeometry.sectionDepth(fracture, geo.rightOffsetM());
+        return new Line(
+                geo.figureLeft(), geo.zToY(zLeft),
+                geo.figureRight(), geo.zToY(zRight));
     }
 
     // ---------------- 井轴处的深度标注 ----------------
@@ -197,24 +245,19 @@ public final class SectionColorChart extends SectionChart {
 
     // ---------------- 点击查看某点的数据 ----------------
 
-    /** 没点到界面线时，报告这一点的深度、所在层的夹角与电阻率。 */
+    /** 没点到界面线时，报告这一点的深度、统一倾角与电阻率。 */
     @Override
     protected String figureText(double x, double y) {
 
         double depth = geo.yToZ(y);
 
         if (Math.abs(x - geo.axisX()) <= geo.wellRadiusPx()) {
-            return String.format("深度 z: %.2f m%n角度 θ: —%n电阻率 ρ: %.0f",
-                    depth, model.wellResistivity());
+            return String.format("深度 z: %.2f m%n统一倾角 θ: %.1f°%n电阻率 ρ: %.0f",
+                    depth, model.dipAngle(), model.wellResistivity());
         }
 
         int layer = geo.layerAt(x, y);
-        double angle = geo.layerAngle(layer, x);
-
-        // 最深的一层没有下界界面，角度显示成破折号
-        String angleText = Double.isNaN(angle) ? "—" : String.format("%.1f°", angle);
-
-        return String.format("深度 z: %.2f m%n角度 θ: %s%n电阻率 ρ: %.0f",
-                depth, angleText, model.resistivityOf(layer));
+        return String.format("深度 z: %.2f m%n统一倾角 θ: %.1f°%n电阻率 ρ: %.0f",
+                depth, geo.dipAngle(), model.resistivityOf(layer));
     }
 }

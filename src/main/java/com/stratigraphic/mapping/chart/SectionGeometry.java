@@ -5,9 +5,7 @@ import com.stratigraphic.mapping.model.StratumModel;
 import javafx.geometry.Point2D;
 import javafx.scene.shape.Line;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -35,6 +33,7 @@ public final class SectionGeometry {
 
     private final List<StratumInterface> interfaces;
     private final double wellRadiusM;
+    private final double dipAngle;
 
     private final double zTop;
     private final double zBottom;
@@ -51,6 +50,7 @@ public final class SectionGeometry {
 
         this.interfaces = model.interfaces();
         this.wellRadiusM = model.wellRadius();
+        this.dipAngle = model.dipAngle();
 
         this.zTop = model.minDepth() - DEPTH_MARGIN;
         this.zBottom = model.maxDepth() + DEPTH_MARGIN;
@@ -100,6 +100,11 @@ public final class SectionGeometry {
         return wellRadiusPx;
     }
 
+    /** 全部地层界面共用的倾角 (°)。 */
+    public double dipAngle() {
+        return dipAngle;
+    }
+
     public double zTop() {
         return zTop;
     }
@@ -130,7 +135,7 @@ public final class SectionGeometry {
 
     /** 界面在横坐标 {@code x} 处的屏幕纵坐标。 */
     public double interfaceY(StratumInterface s, double x) {
-        return zToY(s.depth()) - (x - axisX) * cot(s.angle());
+        return zToY(s.depth()) - (x - axisX) * cot(dipAngle);
     }
 
     /** 界面横坐标每走 1 px 的竖直落差。 */
@@ -186,18 +191,6 @@ public final class SectionGeometry {
         );
     }
 
-    /** 两条界面的交点横坐标；平行（夹角相同）时返回 {@link Double#NaN}。 */
-    private double crossingX(StratumInterface a, StratumInterface b) {
-
-        double ca = cot(a.angle());
-        double cb = cot(b.angle());
-
-        if (Math.abs(ca - cb) < 1e-12) {
-            return Double.NaN;
-        }
-        return axisX + (a.depth() - b.depth()) * PX_PER_M / (ca - cb);
-    }
-
     /** 该横坐标处各界面按深度由浅到深的顺序（存的是界面下标）。 */
     public int[] orderAt(double x) {
 
@@ -222,7 +215,7 @@ public final class SectionGeometry {
         double dx = x - axisX;
         double dy = y - zToY(s.depth());
 
-        return Math.abs(dx * normalX(s.angle()) + dy * normalY(s.angle()));
+        return Math.abs(dx * normalX(dipAngle) + dy * normalY(dipAngle));
     }
 
     /**
@@ -258,60 +251,20 @@ public final class SectionGeometry {
         return count;
     }
 
-    /**
-     * 第 {@code layer} 层（0 表示最浅的一层）在横坐标 {@code x} 处的
-     * 下界（更深一侧）界面夹角，单位度。
-     *
-     * <p>最深的一层下面没有界面，返回 {@link Double#NaN}。
-     */
+    /** 第 {@code layer} 层界面倾角；统一倾角下所有层都相同。 */
     public double layerAngle(int layer, double x) {
 
-        // 有效层号是 0 ~ interfaces.size()，但最深一层没有下界界面
-        if (layer < 0 || layer >= interfaces.size()) {
+        if (layer < 0 || layer > interfaces.size()) {
             return Double.NaN;
         }
-
-        int[] order = orderAt(x);
-        return interfaces.get(order[layer]).angle();
+        return dipAngle;
     }
 
     /**
-     * 图面需要竖直切分的 x：界面两两相交处 + 图面左右边缘。
-     * 色块必须按这些切点分条绘制，否则相邻层的边界对不齐。
+     * 统一倾角下所有界面互相平行，不需要额外切点，只返回图面的左右边缘。
      */
     public double[] layerCuts() {
-
-        List<Double> cuts = new ArrayList<>();
-        cuts.add(figureLeft);
-
-        for (int i = 0; i < interfaces.size(); i++) {
-            for (int j = i + 1; j < interfaces.size(); j++) {
-
-                double x = crossingX(interfaces.get(i), interfaces.get(j));
-
-                // 只保留落在图面内、不在边缘上的
-                if (x > figureLeft + 1e-6 && x < figureRight() - 1e-6) {
-                    cuts.add(x);
-                }
-            }
-        }
-
-        cuts.add(figureRight());
-        Collections.sort(cuts);
-
-        // 合并靠得过近的切点，避免出现零宽竖条
-        List<Double> merged = new ArrayList<>();
-        for (double x : cuts) {
-            if (merged.isEmpty() || x - merged.get(merged.size() - 1) > 1e-3) {
-                merged.add(x);
-            }
-        }
-
-        double[] out = new double[merged.size()];
-        for (int i = 0; i < out.length; i++) {
-            out[i] = merged.get(i);
-        }
-        return out;
+        return new double[]{figureLeft, figureRight()};
     }
 
     /** 点是否落在图面内。 */

@@ -66,7 +66,7 @@ public abstract class SectionChart extends Pane {
     private final ChartPopup popup = new ChartPopup();
 
     /**
-     * 点图面：命中界面线就报这条线的交点深度和夹角；
+     * 点图面：命中界面线就报这条线的交点深度和统一倾角；
      * 没命中就问子类（{@link #figureText}）要该点的数据；都没有就关掉小窗。
      */
     private void handleClick(MouseEvent e) {
@@ -119,7 +119,7 @@ public abstract class SectionChart extends Pane {
         }
 
         StratumInterface s = model.interfaces().get(index);
-        Line line = geo.createLine(geo.axisX(), geo.zToY(s.depth()), s.angle());
+        Line line = geo.createLine(geo.axisX(), geo.zToY(s.depth()), model.dipAngle());
 
         highlight.setStartX(line.getStartX());
         highlight.setStartY(line.getStartY());
@@ -128,11 +128,11 @@ public abstract class SectionChart extends Pane {
         highlight.setVisible(true);
     }
 
-    /** 界面线的数据：交点深度 + 夹角。 */
+    /** 界面线的数据：交点深度 + 统一倾角。 */
     private String interfaceText(int index) {
 
         StratumInterface s = model.interfaces().get(index);
-        return String.format("深度 z: %.2f m%n角度 θ: %.1f°", s.depth(), s.angle());
+        return String.format("深度 z: %.2f m%n统一倾角 θ: %.1f°", s.depth(), model.dipAngle());
     }
 
     /** 没点到界面线时，子类可以给出该点的数据；返回 null 表示不弹窗。 */

@@ -1,5 +1,6 @@
 package com.stratigraphic.mapping.reader;
 
+import com.stratigraphic.mapping.model.Fracture;
 import com.stratigraphic.mapping.model.StratumInterface;
 import com.stratigraphic.mapping.model.StratumModel;
 
@@ -23,15 +24,17 @@ import java.util.List;
  * <p>文件格式（{@code #} 起为注释，空行忽略）：
  * <pre>
  *   n          = 5                      界面个数
+ *   dip        = 90                     统一地层倾角 (°)
  *   wellRadius = 0.1                    井眼半径 (m)
  *   wellRho    = 100                    井眼电阻率 (Ω·m)
  *   rho        = 20 15 10 30 40 50      由浅到深 n+1 层电阻率 (Ω·m)
- *   0.80 90                             界面行：交点深度 (m) 与夹角 (°)
- *   1.00 94
+ *   0.80                                界面行：与井轴的交点深度 (m)
+ *   1.00
  *   ...
  * </pre>
  *
- * <p>界面行不带等号，每行两个数，可写成 {@code 0.80 90}、{@code 0.80, 90} 或 {@code 0.80,90}。
+ * <p>界面行不带等号，每行一个深度。为了兼容旧文件，也接受「深度 夹角」两列；
+ * 此时文件里没有 {@code dip} 时采用第一条界面的夹角，并统一应用到全部界面。
  * {@code n} 可以不写，此时按实际界面行数推断。
  */
 public final class StratumModelReader {
@@ -125,11 +128,17 @@ public final class StratumModelReader {
     /** 逐行解析。出错时抛出 {@link IllegalArgumentException}，消息里带行号，可直接显示给用户。 */
     public static StratumModel parse(List<String> lines) {
 
+        if (isFormationGFormat(lines)) {
+            return parseFormationG(lines);
+        }
+
         Integer declaredCount = null;
+        Double dipAngle = null;
         Double wellRadius = null;
         Double wellResistivity = null;
         List<Double> resistivities = null;
         List<StratumInterface> interfaces = new ArrayList<>();
+        List<Double> legacyAngles = new ArrayList<>();
 
         for (int i = 0; i < lines.size(); i++) {
 
@@ -143,9 +152,12 @@ public final class StratumModelReader {
             int eq = text.indexOf('=');
 
             if (eq < 0) {
-                // 不带等号：界面行，两个数分别是交点深度和夹角
-                double[] pair = parsePair(text, lineNo);
-                interfaces.add(new StratumInterface(pair[0], pair[1]));
+                // 不带等号：界面行。新格式只有一个深度，旧格式可带第二个夹角值。
+                double[] values = parseInterfaceLine(text, lineNo);
+                interfaces.add(new StratumInterface(values[0]));
+                if (!Double.isNaN(values[1])) {
+                    legacyAngles.add(values[1]);
+                }
                 continue;
             }
 
@@ -154,6 +166,8 @@ public final class StratumModelReader {
 
             switch (key) {
                 case "n" -> declaredCount = parseCount(value, lineNo);
+                case "dip", "dipAngle", "angle" ->
+                        dipAngle = parseNumber(value, lineNo, "统一地层倾角 dip");
                 case "wellRadius" -> wellRadius = parseNumber(value, lineNo, "井眼半径 wellRadius");
                 case "wellRho" -> wellResistivity = parseNumber(value, lineNo, "井眼电阻率 wellRho");
                 case "rho" -> resistivities = parseList(value, lineNo, "层电阻率 rho");
@@ -178,7 +192,188 @@ public final class StratumModelReader {
                             + "，实际列出 " + interfaces.size() + " 条界面，两者不一致");
         }
 
-        return new StratumModel(wellRadius, wellResistivity, interfaces, resistivities);
+        double effectiveDip = dipAngle != null
+                ? dipAngle
+                : (legacyAngles.isEmpty() ? 90 : legacyAngles.get(0));
+        if (!Double.isFinite(effectiveDip)
+                || effectiveDip <= 0 || effectiveDip >= 180) {
+            throw new IllegalArgumentException(
+                    "统一地层倾角必须在 0° 与 180° 之间，实际为 " + effectiveDip);
+        }
+
+        return new StratumModel(
+                wellRadius, wellResistivity, effectiveDip, interfaces, resistivities);
+    }
+
+
+    // =========================================================
+    // formation_G.txt 固定格式
+    // =========================================================
+
+    private static boolean isFormationGFormat(List<String> lines) {
+        for (String line : lines) {
+            String compact = compact(line);
+            if (compact.contains("地层模型参数") || compact.contains("裂缝个数n2")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static StratumModel parseFormationG(List<String> lines) {
+
+        Integer interfaceCount = null;
+        Integer fractureCount = null;
+        Double dipAngle = null;
+        Double wellRadius = null;
+        Double wellResistivity = null;
+        List<Double> depths = new ArrayList<>();
+        List<Double> resistivities = new ArrayList<>();
+        List<Fracture> fractures = new ArrayList<>();
+
+        for (int i = 0; i < lines.size(); i++) {
+
+            String header = compact(lines.get(i));
+            if (header.isEmpty() || isSeparator(header)) {
+                continue;
+            }
+
+            if (header.equals("界面个数n")) {
+                double[] row = firstNumericRowAfter(lines, i + 1);
+                interfaceCount = parseInteger(row[0], i + 1, "界面个数 n");
+            } else if (header.contains("界面和井轴的夹角")) {
+                double[] row = firstNumericRowAfter(lines, i + 1);
+                if (row.length < 3) {
+                    throw new IllegalArgumentException(
+                            "第 " + (i + 1) + " 行：界面夹角、井眼半径和泥浆电阻率需要三个数");
+                }
+                dipAngle = row[0];
+                wellRadius = row[1];
+                wellResistivity = row[2];
+            } else if (header.contains("界面和井轴的交点深度")) {
+                depths = firstColumnAfter(lines, i + 1);
+            } else if (header.startsWith("层数")) {
+                resistivities = lastColumnAfter(lines, i + 1);
+            } else if (header.contains("裂缝个数n2")) {
+                double[] row = firstNumericRowAfter(lines, i + 1);
+                fractureCount = parseInteger(row[0], i + 1, "裂缝个数 n2");
+            } else if (header.contains("裂缝和井轴的交点深度")) {
+                for (double[] row : numericRowsAfter(lines, i + 1)) {
+                    if (row.length < 4) {
+                        throw new IllegalArgumentException(
+                                "第 " + (i + 1) + " 行：裂缝行至少需要深度、法向仰角、法向方位角和 R1 四个数");
+                    }
+                    fractures.add(new Fracture(row[0], row[1], row[2], row[3]));
+                }
+            }
+        }
+
+        if (interfaceCount == null || dipAngle == null
+                || wellRadius == null || wellResistivity == null) {
+            throw new IllegalArgumentException("formation_G 文件缺少地层模型参数");
+        }
+        if (depths.size() != interfaceCount) {
+            throw new IllegalArgumentException(
+                    "formation_G 文件写的界面个数为 " + interfaceCount
+                            + "，实际列出 " + depths.size() + " 个深度");
+        }
+        if (resistivities.size() != interfaceCount + 1) {
+            throw new IllegalArgumentException(
+                    "formation_G 文件应有 " + (interfaceCount + 1)
+                            + " 个层电阻率，实际列出 " + resistivities.size() + " 个");
+        }
+        if (fractureCount != null && fractures.size() != fractureCount) {
+            throw new IllegalArgumentException(
+                    "formation_G 文件写的裂缝个数为 " + fractureCount
+                            + "，实际列出 " + fractures.size() + " 条裂缝");
+        }
+
+        List<StratumInterface> interfaces = new ArrayList<>(depths.size());
+        for (double depth : depths) {
+            interfaces.add(new StratumInterface(depth));
+        }
+
+        return new StratumModel(wellRadius, wellResistivity, dipAngle,
+                interfaces, resistivities, fractures);
+    }
+
+    private static double[] firstNumericRowAfter(List<String> lines, int start) {
+        List<double[]> rows = numericRowsAfter(lines, start);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("第 " + start + " 行之后缺少数值数据");
+        }
+        return rows.get(0);
+    }
+
+    private static List<Double> firstColumnAfter(List<String> lines, int start) {
+        List<Double> values = new ArrayList<>();
+        for (double[] row : numericRowsAfter(lines, start)) {
+            if (row.length > 0) {
+                values.add(row[0]);
+            }
+        }
+        return values;
+    }
+
+    private static List<Double> lastColumnAfter(List<String> lines, int start) {
+        List<Double> values = new ArrayList<>();
+        for (double[] row : numericRowsAfter(lines, start)) {
+            if (row.length > 0) {
+                values.add(row[row.length - 1]);
+            }
+        }
+        return values;
+    }
+
+    private static List<double[]> numericRowsAfter(List<String> lines, int start) {
+
+        List<double[]> rows = new ArrayList<>();
+        for (int i = start; i < lines.size(); i++) {
+            String text = stripComment(lines.get(i)).trim();
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (isSeparator(text)) {
+                if (!rows.isEmpty()) {
+                    break;
+                }
+                continue;
+            }
+            try {
+                rows.add(parseNumericRow(text));
+            } catch (NumberFormatException ex) {
+                if (!rows.isEmpty()) {
+                    break;
+                }
+            }
+        }
+        return rows;
+    }
+
+    private static double[] parseNumericRow(String text) {
+        String[] parts = text.replace(',', ' ').trim().split("\s+");
+        double[] values = new double[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            values[i] = Double.parseDouble(parts[i]);
+        }
+        return values;
+    }
+
+    private static int parseInteger(double value, int lineNo, String what) {
+        if (!Double.isFinite(value) || value != Math.rint(value) || value < 0) {
+            throw new IllegalArgumentException(
+                    "第 " + lineNo + " 行：" + what + "必须是非负整数");
+        }
+        return (int) value;
+    }
+
+    private static boolean isSeparator(String text) {
+        String compact = compact(text);
+        return compact.matches("-+");
+    }
+
+    private static String compact(String text) {
+        return text == null ? "" : text.replaceAll("\\s+", "");
     }
 
     // 去掉 # 之后的内容
@@ -187,16 +382,17 @@ public final class StratumModelReader {
         return hash < 0 ? line : line.substring(0, hash);
     }
 
-    // 一行两个数：深度 夹角
-    private static double[] parsePair(String text, int lineNo) {
+    // 一行一个深度；兼容旧格式的「深度 夹角」两列。
+    private static double[] parseInterfaceLine(String text, int lineNo) {
         String[] parts = text.replace(',', ' ').trim().split("\\s+");
-        if (parts.length != 2) {
+        if (parts.length < 1 || parts.length > 2) {
             throw new IllegalArgumentException(
-                    "第 " + lineNo + " 行：界面行应写成「交点深度 夹角」两个数，实际是「" + text + "」");
+                    "第 " + lineNo + " 行：界面行应写成「交点深度」，"
+                            + "或兼容旧格式的「交点深度 夹角」，实际是「" + text + "」");
         }
         return new double[]{
                 parseNumber(parts[0], lineNo, "交点深度"),
-                parseNumber(parts[1], lineNo, "夹角")
+                parts.length == 2 ? parseNumber(parts[1], lineNo, "夹角") : Double.NaN
         };
     }
 

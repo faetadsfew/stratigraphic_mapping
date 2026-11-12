@@ -100,6 +100,14 @@
     -fx-line-spacing: 2px;
 }
 
+.fracture-card {
+    -fx-background-color: #F8FAFC;
+    -fx-background-radius: 4;
+    -fx-border-color: #DDE4EB;
+    -fx-border-radius: 4;
+    -fx-padding: 8 8 8 8;
+}
+
 /* ---------------- 折叠分组（TitledPane / Accordion） ---------------- */
 
 .titled-pane {
@@ -251,12 +259,6 @@
 .chart-slot {
     -fx-border-color: transparent transparent transparent #DDDDDD;
     -fx-border-width: 0 0 0 1;
-}
-
-/* 线框槽补 1px：彩图槽左边有 1px 分隔线，内宽会少 1px，
-   这里补齐后两个槽的可绘图区域一样宽，两张图才严格等大 */
-.line-chart-slot {
-    -fx-padding: 0 1 0 0;
 }
 
 .chart-box {
