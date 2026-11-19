@@ -9,6 +9,8 @@ import javafx.scene.layout.Pane;
 import javafx.scene.shape.Line;
 import javafx.scene.shape.Rectangle;
 
+import java.util.function.IntConsumer;
+
 /**
  * 两张剖面图的公共部分：图面几何、图框、深度/水平距离刻度、图上文字。
  *
@@ -51,6 +53,24 @@ public abstract class SectionChart extends Pane {
         return geo.figureHeight();
     }
 
+    /** 设置裂缝点击回调；参数是裂缝在模型裂缝列表中的序号。 */
+    public final void setOnFractureSelected(IntConsumer action) {
+        this.onFractureSelected = action == null ? index -> {
+        } : action;
+    }
+
+    /** 设置界面点击回调；参数是界面在模型界面列表中的序号。 */
+    public final void setOnInterfaceSelected(IntConsumer action) {
+        this.onInterfaceSelected = action == null ? index -> {
+        } : action;
+    }
+
+    /** 设置地层色块点击回调；参数是地层在模型中的层号。 */
+    public final void setOnLayerSelected(IntConsumer action) {
+        this.onLayerSelected = action == null ? index -> {
+        } : action;
+    }
+
     // ---------------- 点击图面看数据 ----------------
 
     /** 点到界面线的容差（图面坐标像素）。 */
@@ -62,41 +82,45 @@ public abstract class SectionChart extends Pane {
 
     private final Line highlight = new Line();
 
-    /** 点击后弹出的数据小窗；两个浮层都是第一次用的时候再挂上去，保证压在图面上面。 */
-    private final ChartPopup popup = new ChartPopup();
+    /** 点击裂缝时通知外部（例如左侧参数面板定位并高亮裂缝参数）。 */
+    private IntConsumer onFractureSelected = index -> {
+    };
 
-    /**
-     * 点图面：命中界面线就报这条线的交点深度和统一倾角；
-     * 没命中就问子类（{@link #figureText}）要该点的数据；都没有就关掉小窗。
-     */
+    private IntConsumer onInterfaceSelected = index -> {
+    };
+
+    private IntConsumer onLayerSelected = index -> {
+    };
+
+    /** 点图面：识别裂缝、界面或地层，并通知外部高亮对应参数。 */
     private void handleClick(MouseEvent e) {
 
-        ensureOverlays();
+        ensureHighlight();
 
         double x = e.getX();
         double y = e.getY();
 
         boolean inside = geo.insideFigure(x, y);
-        int hit = inside ? geo.interfaceAt(x, y, HIT_TOLERANCE) : -1;
+        int fracture = inside ? fractureAt(x, y) : -1;
 
-        highlightInterface(hit);
-
-        String content = null;
-        if (hit >= 0) {
-            content = interfaceText(hit);
-        } else if (inside) {
-            content = figureText(x, y);
+        if (fracture >= 0) {
+            highlightInterface(-1);
+            onFractureSelected.accept(fracture);
+        } else {
+            int hit = inside ? geo.interfaceAt(x, y, HIT_TOLERANCE) : -1;
+            highlightInterface(hit);
+            if (hit >= 0) {
+                onInterfaceSelected.accept(hit);
+            } else if (inside) {
+                if (Math.abs(x - geo.axisX()) > geo.wellRadiusPx()) {
+                    onLayerSelected.accept(geo.layerAt(x, y));
+                }
+            }
         }
-
-        if (content == null) {
-            popup.hide();
-            return;
-        }
-        popup.show(content, x, y, getPrefWidth(), getPrefHeight());
     }
 
-    /** 两个浮层按「高亮线在下、弹窗在上」的顺序挂到图面上。 */
-    private void ensureOverlays() {
+    /** 高亮线第一次使用时挂到图面上。 */
+    private void ensureHighlight() {
 
         if (highlight.getParent() == null) {
             highlight.setStroke(HIGHLIGHT_COLOR);
@@ -104,9 +128,6 @@ public abstract class SectionChart extends Pane {
             highlight.setMouseTransparent(true);
             highlight.setVisible(false);
             getChildren().add(highlight);
-        }
-        if (popup.getParent() == null) {
-            getChildren().add(popup);
         }
     }
 
@@ -128,16 +149,9 @@ public abstract class SectionChart extends Pane {
         highlight.setVisible(true);
     }
 
-    /** 界面线的数据：交点深度 + 统一倾角。 */
-    private String interfaceText(int index) {
-
-        StratumInterface s = model.interfaces().get(index);
-        return String.format("深度 z: %.2f m%n统一倾角 θ: %.1f°", s.depth(), model.dipAngle());
-    }
-
-    /** 没点到界面线时，子类可以给出该点的数据；返回 null 表示不弹窗。 */
-    protected String figureText(double x, double y) {
-        return null;
+    /** 返回点击位置命中的裂缝序号；没有命中返回 -1。子类按自己的裂缝几何实现。 */
+    protected int fractureAt(double x, double y) {
+        return -1;
     }
 
     // ---------------- 图框 ----------------

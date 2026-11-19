@@ -19,6 +19,9 @@ public final class StratumModel {
     private final List<StratumInterface> interfaces;
     private final List<Double> resistivities;
     private final List<Fracture> fractures;
+    private final List<SphereFracture> sphereFractures;
+    private final List<WedgeFracture> wedgeFractures;
+    private final List<SurfaceText> surfaceTexts;
 
     public StratumModel(double wellRadius,
                         double wellResistivity,
@@ -26,7 +29,7 @@ public final class StratumModel {
                         List<StratumInterface> interfaces,
                         List<Double> resistivities) {
         this(wellRadius, wellResistivity, dipAngle,
-                interfaces, resistivities, List.of());
+                interfaces, resistivities, List.of(), List.of());
     }
 
     public StratumModel(double wellRadius,
@@ -35,6 +38,46 @@ public final class StratumModel {
                         List<StratumInterface> interfaces,
                         List<Double> resistivities,
                         List<Fracture> fractures) {
+
+        this(wellRadius, wellResistivity, dipAngle,
+                interfaces, resistivities, fractures, List.of());
+    }
+
+    public StratumModel(double wellRadius,
+                        double wellResistivity,
+                        double dipAngle,
+                        List<StratumInterface> interfaces,
+                        List<Double> resistivities,
+                        List<Fracture> fractures,
+                        List<SphereFracture> sphereFractures) {
+
+        this(wellRadius, wellResistivity, dipAngle,
+                interfaces, resistivities, fractures, sphereFractures, List.of());
+    }
+
+    public StratumModel(double wellRadius,
+                        double wellResistivity,
+                        double dipAngle,
+                        List<StratumInterface> interfaces,
+                        List<Double> resistivities,
+                        List<Fracture> fractures,
+                        List<SphereFracture> sphereFractures,
+                        List<WedgeFracture> wedgeFractures) {
+
+        this(wellRadius, wellResistivity, dipAngle,
+                interfaces, resistivities, fractures, sphereFractures, wedgeFractures,
+                List.of());
+    }
+
+    public StratumModel(double wellRadius,
+                        double wellResistivity,
+                        double dipAngle,
+                        List<StratumInterface> interfaces,
+                        List<Double> resistivities,
+                        List<Fracture> fractures,
+                        List<SphereFracture> sphereFractures,
+                        List<WedgeFracture> wedgeFractures,
+                        List<SurfaceText> surfaceTexts) {
 
         check(wellRadius > 0 && Double.isFinite(wellRadius),
                 "井眼半径必须是大于 0 的数");
@@ -73,6 +116,9 @@ public final class StratumModel {
         this.interfaces = List.copyOf(interfaces);
         this.resistivities = List.copyOf(resistivities);
         this.fractures = List.copyOf(fractures);
+        this.sphereFractures = List.copyOf(sphereFractures);
+        this.wedgeFractures = List.copyOf(wedgeFractures);
+        this.surfaceTexts = List.copyOf(surfaceTexts);
     }
 
     /** 兼容旧调用：未给出统一倾角时按水平界面处理。 */
@@ -119,6 +165,21 @@ public final class StratumModel {
         return fractures;
     }
 
+    /** 圆形裂缝（球体）列表。 */
+    public List<SphereFracture> sphereFractures() {
+        return sphereFractures;
+    }
+
+    /** 楔形体裂缝列表，只用于井壁展开图。 */
+    public List<WedgeFracture> wedgeFractures() {
+        return wedgeFractures;
+    }
+
+    /** 井壁展开图上的曲面文字列表。 */
+    public List<SurfaceText> surfaceTexts() {
+        return surfaceTexts;
+    }
+
     /** 界面个数 n。 */
     public int interfaceCount() {
         return interfaces.size();
@@ -148,11 +209,45 @@ public final class StratumModel {
         return Math.max(wellResistivity,
                 Math.max(
                         resistivities.stream().mapToDouble(Double::doubleValue).max().orElse(0),
+                        Math.max(
+                                fractures.stream().mapToDouble(Fracture::resistivity).max().orElse(0),
+                                Math.max(
+                                        sphereFractures.stream()
+                                                .mapToDouble(SphereFracture::resistivity)
+                                                .max().orElse(0),
+                                        wedgeFractures.stream()
+                                                .mapToDouble(WedgeFracture::resistivity)
+                                                .max().orElse(0)))));
+    }
+
+    /** 岩性剖面使用的最大电阻率：不包含只在井壁展开图显示的球体与楔形体裂缝。 */
+    public double maxSectionResistivity() {
+        return Math.max(wellResistivity,
+                Math.max(
+                        resistivities.stream().mapToDouble(Double::doubleValue).max().orElse(0),
                         fractures.stream().mapToDouble(Fracture::resistivity).max().orElse(0)));
     }
 
     /** 全部电阻率里的最小值（含井眼、地层和裂缝），用作统一对数色标的下界。 */
     public double minResistivity() {
+        return Math.min(wellResistivity,
+                Math.min(
+                        resistivities.stream().mapToDouble(Double::doubleValue)
+                                .min().orElse(wellResistivity),
+                        Math.min(
+                                fractures.stream().mapToDouble(Fracture::resistivity)
+                                        .min().orElse(wellResistivity),
+                                Math.min(
+                                        sphereFractures.stream()
+                                                .mapToDouble(SphereFracture::resistivity)
+                                                .min().orElse(wellResistivity),
+                                        wedgeFractures.stream()
+                                                .mapToDouble(WedgeFracture::resistivity)
+                                                .min().orElse(wellResistivity)))));
+    }
+
+    /** 岩性剖面使用的最小电阻率：不包含只在井壁展开图显示的球体与楔形体裂缝。 */
+    public double minSectionResistivity() {
         return Math.min(wellResistivity,
                 Math.min(
                         resistivities.stream().mapToDouble(Double::doubleValue)

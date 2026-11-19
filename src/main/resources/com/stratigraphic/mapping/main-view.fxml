@@ -13,7 +13,7 @@
 <!--
   主窗口结构：
     top    顶部工具栏（打开参数 / 导出 / 重置视图）
-    center 三栏：左参数面板、中彩色地层剖面、右井壁展开图
+    center 左侧参数面板，右侧三栏：三维图、彩色地层剖面、井壁展开图
     bottom 底部状态栏
 -->
 <BorderPane xmlns:fx="http://javafx.com/fxml"
@@ -43,8 +43,9 @@
         <GridPane fx:id="mainGrid">
             <columnConstraints>
                 <ColumnConstraints percentWidth="25"/>
-                <ColumnConstraints percentWidth="33"/>
-                <ColumnConstraints percentWidth="42"/>
+                <ColumnConstraints percentWidth="25"/>
+                <ColumnConstraints percentWidth="25"/>
+                <ColumnConstraints percentWidth="25"/>
             </columnConstraints>
             <rowConstraints>
                 <RowConstraints vgrow="ALWAYS"/>
@@ -54,11 +55,14 @@
                 <!-- 左侧：统一参数和两个展开点 -->
                 <VBox fx:id="parameterSlot" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
 
-                <!-- 中间：彩色地层剖面 -->
-                <VBox fx:id="colorChartSlot" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+                <!-- 右侧左一：三维图（预留，暂不绘制内容） -->
+                <VBox fx:id="threeDChartSlot" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
 
-                <!-- 右侧：井壁展开图 -->
-                <VBox fx:id="wallChartSlot" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
+                <!-- 右侧中列：彩色地层剖面 -->
+                <VBox fx:id="colorChartSlot" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
+
+                <!-- 右侧右列：井壁展开图 -->
+                <VBox fx:id="wallChartSlot" GridPane.columnIndex="3" GridPane.rowIndex="0"/>
             </children>
         </GridPane>
     </center>

@@ -14,19 +14,19 @@ final class FractureGeometry {
     }
 
     static double normalX(Fracture fracture) {
-        double elevation = Math.toRadians(90 - fracture.normalElevationDeg());
-        double azimuth = Math.toRadians(fracture.normalAzimuthDeg());
+        double elevation = Math.toRadians(90 - fracture.normalizedElevationDeg());
+        double azimuth = Math.toRadians(fracture.normalizedAzimuthDeg());
         return Math.cos(elevation) * Math.cos(azimuth);
     }
 
     static double normalY(Fracture fracture) {
-        double elevation = Math.toRadians(90 - fracture.normalElevationDeg());
-        double azimuth = Math.toRadians(fracture.normalAzimuthDeg());
+        double elevation = Math.toRadians(90 - fracture.normalizedElevationDeg());
+        double azimuth = Math.toRadians(fracture.normalizedAzimuthDeg());
         return Math.cos(elevation) * Math.sin(azimuth);
     }
 
     static double normalZ(Fracture fracture) {
-        return Math.sin(Math.toRadians(90 - fracture.normalElevationDeg()));
+        return Math.sin(Math.toRadians(90 - fracture.normalizedElevationDeg()));
     }
 
     static double traceDepth(Fracture fracture, double wellRadius, double angleDeg) {

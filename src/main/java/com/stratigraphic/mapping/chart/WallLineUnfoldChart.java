@@ -1,18 +1,32 @@
 package com.stratigraphic.mapping.chart;
 
 import com.stratigraphic.mapping.model.Fracture;
+import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
 import com.stratigraphic.mapping.model.StratumModel;
+import com.stratigraphic.mapping.model.SurfaceText;
+import javafx.geometry.VPos;
+import javafx.scene.Group;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.ClosePath;
+import javafx.scene.shape.LineTo;
+import javafx.scene.shape.MoveTo;
+import javafx.scene.shape.Path;
+import javafx.scene.shape.Polygon;
+import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
+import java.util.function.IntConsumer;
 
 /**
  * 井壁展开线框图。
@@ -32,13 +46,28 @@ public final class WallLineUnfoldChart extends Pane {
 
     private static final int TRACE_STEPS = 720;
     private static final Color TRACE_COLOR = Color.BLACK;
+    private static final double FRACTURE_HIT_TOLERANCE = 10;
+    private static final double INTERFACE_HIT_TOLERANCE = 8;
+    private static final double SPHERE_HIT_TOLERANCE = 6;
+    private static final double[] WRAP_SHIFTS = {-360, 0, 360};
 
     private final StratumModel model;
     private final ColorScale resistivityScale;
     private final double zTop;
     private final double zBottom;
     private final Canvas canvas = new Canvas(chartWidth(), chartHeight());
-    private final ChartPopup popup = new ChartPopup();
+    private IntConsumer onFractureSelected = index -> {
+    };
+    private IntConsumer onInterfaceSelected = index -> {
+    };
+    private IntConsumer onLayerSelected = index -> {
+    };
+    private IntConsumer onSphereSelected = index -> {
+    };
+    private IntConsumer onWedgeSelected = index -> {
+    };
+    private IntConsumer onTextSelected = index -> {
+    };
 
     public WallLineUnfoldChart(StratumModel model, double pointA, double pointB) {
 
@@ -62,8 +91,46 @@ public final class WallLineUnfoldChart extends Pane {
         getChildren().add(canvas);
 
         draw();
+        addWedgeFractures();
+        addSphereFractures();
         addFractureLegend();
         setOnMouseClicked(this::handleClick);
+    }
+
+    /** 设置裂缝点击回调；参数是裂缝在模型裂缝列表中的序号。 */
+    public void setOnFractureSelected(IntConsumer action) {
+        this.onFractureSelected = action == null ? index -> {
+        } : action;
+    }
+
+    /** 设置界面点击回调；参数是界面在模型界面列表中的序号。 */
+    public void setOnInterfaceSelected(IntConsumer action) {
+        this.onInterfaceSelected = action == null ? index -> {
+        } : action;
+    }
+
+    /** 设置地层色块点击回调；参数是地层在模型中的层号。 */
+    public void setOnLayerSelected(IntConsumer action) {
+        this.onLayerSelected = action == null ? index -> {
+        } : action;
+    }
+
+    /** 设置球体裂缝点击回调；参数是球体在模型球体列表中的序号。 */
+    public void setOnSphereSelected(IntConsumer action) {
+        this.onSphereSelected = action == null ? index -> {
+        } : action;
+    }
+
+    /** 设置楔形体裂缝点击回调；参数是楔形体在模型列表中的序号。 */
+    public void setOnWedgeSelected(IntConsumer action) {
+        this.onWedgeSelected = action == null ? index -> {
+        } : action;
+    }
+
+    /** 设置曲面文字点击回调；参数是文字在模型文字列表中的序号。 */
+    public void setOnTextSelected(IntConsumer action) {
+        this.onTextSelected = action == null ? index -> {
+        } : action;
     }
 
     private void draw() {
@@ -76,6 +143,7 @@ public final class WallLineUnfoldChart extends Pane {
         drawLayerColors(gc);
         drawTraces(gc);
         drawFractures(gc);
+        drawSurfaceTexts(gc);
         drawFrameAndTicks(gc);
     }
 
@@ -194,6 +262,67 @@ public final class WallLineUnfoldChart extends Pane {
         gc.restore();
     }
 
+    /** 在方位角—深度平面上绘制带电阻率底色的曲面文字。 */
+    private void drawSurfaceTexts(GraphicsContext gc) {
+        for (SurfaceText text : model.surfaceTexts()) {
+            double centerX = angleToX(text.normalizedCenterAzimuthDeg());
+            double centerY = zToY(text.centerDepth());
+            double width = text.angularSpanDeg() / 360.0 * PLOT_WIDTH;
+            double height = text.depthSpanM() / (zBottom - zTop) * PLOT_HEIGHT;
+            if (width < 6 || height < 6) {
+                continue;
+            }
+            double left = centerX - width / 2;
+            double top = centerY - height / 2;
+            Color color = resistivityScale.colorOf(text.resistivity());
+
+            gc.save();
+            gc.beginPath();
+            gc.rect(MARGIN_LEFT, MARGIN_TOP, PLOT_WIDTH, PLOT_HEIGHT);
+            gc.clip();
+
+            String content = text.content();
+            int count = content.length();
+            double heightLimited = height * 0.14;
+            double widthLimited = width * 0.24 / Math.max(1, count);
+            double fontSize = Math.max(5, Math.min(36,
+                    Math.min(heightLimited, widthLimited)));
+            gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, fontSize));
+            gc.setTextAlign(TextAlignment.CENTER);
+            gc.setTextBaseline(VPos.CENTER);
+
+            double usableWidth = Math.max(fontSize, width * 0.82);
+            for (int i = 0; i < count; i++) {
+                double t = (i + 0.5) / Math.max(1, count);
+                double x = left + width * 0.09 + t * usableWidth;
+                double arch = Math.sin(Math.PI * t) * Math.min(8, height * 0.14);
+                double rotation = (t - 0.5) * Math.min(18, width / 16);
+                gc.save();
+                gc.translate(x, centerY - arch);
+                gc.rotate(rotation);
+                gc.setFill(color);
+                gc.fillText(String.valueOf(content.charAt(i)), 0, 0);
+                gc.restore();
+            }
+            gc.restore();
+        }
+    }
+
+    private int textAt(double x, double y) {
+        for (int i = 0; i < model.surfaceTexts().size(); i++) {
+            SurfaceText text = model.surfaceTexts().get(i);
+            double centerX = angleToX(text.normalizedCenterAzimuthDeg());
+            double centerY = zToY(text.centerDepth());
+            double width = text.angularSpanDeg() / 360.0 * PLOT_WIDTH;
+            double height = text.depthSpanM() / (zBottom - zTop) * PLOT_HEIGHT;
+            if (x >= centerX - width / 2 - 3 && x <= centerX + width / 2 + 3
+                    && y >= centerY - height / 2 - 3 && y <= centerY + height / 2 + 3) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private void strokeFracture(GraphicsContext gc, Fracture fracture) {
 
         double nx = FractureGeometry.normalX(fracture);
@@ -232,6 +361,188 @@ public final class WallLineUnfoldChart extends Pane {
     private static double normalizeAngle(double angle) {
         double result = angle % 360;
         return result < 0 ? result + 360 : result;
+    }
+
+    /** 在井壁展开图上绘制楔形体填充三角形。 */
+    private void addWedgeFractures() {
+
+        if (model.wedgeFractures().isEmpty()) {
+            return;
+        }
+
+        Group wedgeGroup = new Group();
+        wedgeGroup.setClip(new Rectangle(
+                MARGIN_LEFT, MARGIN_TOP, PLOT_WIDTH, PLOT_HEIGHT));
+
+        for (com.stratigraphic.mapping.model.WedgeFracture wedge : model.wedgeFractures()) {
+            List<WedgeTrace.Point> points = WedgeTrace.polygonPoints(
+                    wedge.vertexAzimuthDeg(), wedge.vertexDepth(),
+                    wedge.leftAzimuthDeg(), wedge.leftDepth(),
+                    wedge.rightAzimuthDeg(), wedge.rightDepth());
+            if (points.isEmpty()) {
+                continue;
+            }
+
+            Color color = resistivityScale.colorOf(wedge.resistivity());
+            for (double shift : WRAP_SHIFTS) {
+                Polygon polygon = new Polygon();
+                for (WedgeTrace.Point point : points) {
+                    polygon.getPoints().addAll(
+                            angleToX(point.angleDeg() + shift), zToY(point.depth()));
+                }
+                polygon.setFill(color);
+                polygon.setStroke(color.deriveColor(0, 1, 0.70, 0.95));
+                polygon.setStrokeWidth(1.4);
+                polygon.setMouseTransparent(true);
+                polygon.getStyleClass().add("wedge-fracture");
+                wedgeGroup.getChildren().add(polygon);
+            }
+        }
+        getChildren().add(wedgeGroup);
+    }
+
+    private int wedgeAt(double x, double y) {
+
+        for (int i = 0; i < model.wedgeFractures().size(); i++) {
+            com.stratigraphic.mapping.model.WedgeFracture wedge =
+                    model.wedgeFractures().get(i);
+            List<WedgeTrace.Point> points = WedgeTrace.polygonPoints(
+                    wedge.vertexAzimuthDeg(), wedge.vertexDepth(),
+                    wedge.leftAzimuthDeg(), wedge.leftDepth(),
+                    wedge.rightAzimuthDeg(), wedge.rightDepth());
+            if (points.isEmpty()) {
+                continue;
+            }
+
+            for (double shift : WRAP_SHIFTS) {
+                Polygon polygon = new Polygon();
+                for (WedgeTrace.Point point : points) {
+                    polygon.getPoints().addAll(
+                            angleToX(point.angleDeg() + shift), zToY(point.depth()));
+                }
+                if (polygon.contains(x, y)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** 球面与井壁圆柱面的交线。 */
+    private void addSphereFractures() {
+
+        if (model.sphereFractures().isEmpty()) {
+            return;
+        }
+
+        Group sphereGroup = new Group();
+        sphereGroup.setClip(new Rectangle(
+                MARGIN_LEFT, MARGIN_TOP, PLOT_WIDTH, PLOT_HEIGHT));
+
+        for (SphereFracture sphere : model.sphereFractures()) {
+            SphereTrace.Trace trace = SphereTrace.of(
+                    model.wellRadius(), sphere.centerDepth(), sphere.azimuthDeg(),
+                    sphere.distanceFromAxis(), sphere.radius());
+            if (trace.isEmpty()) {
+                continue;
+            }
+
+            Color color = resistivityScale.colorOf(sphere.resistivity());
+            for (double shift : WRAP_SHIFTS) {
+                sphereGroup.getChildren().add(spherePath(trace, shift, color));
+            }
+        }
+        getChildren().add(sphereGroup);
+    }
+
+    private Path spherePath(SphereTrace.Trace trace, double angleShift, Color color) {
+
+        Path path = new Path();
+        path.setFill(trace.kind() == SphereTrace.Kind.RING
+                ? color : Color.TRANSPARENT);
+        path.setStroke(color.deriveColor(0, 1, 0.70, 0.9));
+        path.setStrokeWidth(1.3);
+        path.setMouseTransparent(true);
+        path.getStyleClass().add("sphere-fracture");
+
+        appendSubpath(path, trace.upper(), angleShift, true);
+        if (trace.kind() == SphereTrace.Kind.RING) {
+            List<SphereTrace.Point> lower = new ArrayList<>(trace.lower());
+            Collections.reverse(lower);
+            appendSubpath(path, lower, angleShift, false);
+            path.getElements().add(new ClosePath());
+        } else {
+            appendSubpath(path, trace.lower(), angleShift, true);
+        }
+        return path;
+    }
+
+    private void appendSubpath(Path path,
+                               List<SphereTrace.Point> points,
+                               double angleShift,
+                               boolean moveFirst) {
+        for (int i = 0; i < points.size(); i++) {
+            SphereTrace.Point point = points.get(i);
+            double x = angleToX(point.angleDeg() + angleShift);
+            double y = zToY(point.depth());
+            if (i == 0 && moveFirst) {
+                path.getElements().add(new MoveTo(x, y));
+            } else {
+                path.getElements().add(new LineTo(x, y));
+            }
+        }
+    }
+
+    private int sphereAt(double x, double y) {
+
+        for (int i = 0; i < model.sphereFractures().size(); i++) {
+            SphereFracture sphere = model.sphereFractures().get(i);
+            SphereTrace.Trace trace = SphereTrace.of(
+                    model.wellRadius(), sphere.centerDepth(), sphere.azimuthDeg(),
+                    sphere.distanceFromAxis(), sphere.radius());
+            if (trace.isEmpty()) {
+                continue;
+            }
+
+            for (double shift : WRAP_SHIFTS) {
+                if (distanceToPolyline(x, y, trace.upper(), shift) <= SPHERE_HIT_TOLERANCE
+                        || distanceToPolyline(x, y, trace.lower(), shift)
+                        <= SPHERE_HIT_TOLERANCE) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private double distanceToPolyline(double x,
+                                      double y,
+                                      List<SphereTrace.Point> points,
+                                      double angleShift) {
+        double nearest = Double.POSITIVE_INFINITY;
+        for (int i = 1; i < points.size(); i++) {
+            SphereTrace.Point a = points.get(i - 1);
+            SphereTrace.Point b = points.get(i);
+            nearest = Math.min(nearest, distanceToSegment(
+                    x, y,
+                    angleToX(a.angleDeg() + angleShift), zToY(a.depth()),
+                    angleToX(b.angleDeg() + angleShift), zToY(b.depth())));
+        }
+        return nearest;
+    }
+
+    private static double distanceToSegment(double px, double py,
+                                            double x1, double y1,
+                                            double x2, double y2) {
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        double lengthSquared = dx * dx + dy * dy;
+        if (lengthSquared < 1e-12) {
+            return Math.hypot(px - x1, py - y1);
+        }
+        double t = ((px - x1) * dx + (py - y1) * dy) / lengthSquared;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
     }
 
     private void addFractureLegend() {
@@ -296,35 +607,96 @@ public final class WallLineUnfoldChart extends Pane {
         double y = event.getY();
         if (x < MARGIN_LEFT || x > MARGIN_LEFT + PLOT_WIDTH
                 || y < MARGIN_TOP || y > MARGIN_TOP + PLOT_HEIGHT) {
-            popup.hide();
             return;
         }
 
         double angle = xToAngle(x);
         double depth = yToZ(y);
 
-        StratumInterface nearest = null;
-        double nearestDistance = Double.POSITIVE_INFINITY;
-        for (StratumInterface stratum : model.interfaces()) {
-            double distance = Math.abs(traceDepthAt(stratum, angle) - depth);
-            if (distance < nearestDistance) {
+        int sphereIndex = sphereAt(x, y);
+        if (sphereIndex >= 0) {
+            onSphereSelected.accept(sphereIndex);
+            return;
+        }
+
+        int wedgeIndex = wedgeAt(x, y);
+        if (wedgeIndex >= 0) {
+            onWedgeSelected.accept(wedgeIndex);
+            return;
+        }
+
+        int textIndex = textAt(x, y);
+        if (textIndex >= 0) {
+            onTextSelected.accept(textIndex);
+            return;
+        }
+
+        int fractureIndex = fractureAt(angle, x, y);
+        if (fractureIndex >= 0) {
+            onFractureSelected.accept(fractureIndex);
+            return;
+        }
+
+        int interfaceIndex = -1;
+        double nearestDistance = INTERFACE_HIT_TOLERANCE;
+        for (int i = 0; i < model.interfaces().size(); i++) {
+            double traceY = zToY(traceDepthAt(model.interfaces().get(i), angle));
+            double distance = Math.abs(y - traceY);
+            if (distance <= nearestDistance) {
                 nearestDistance = distance;
-                nearest = stratum;
+                interfaceIndex = i;
             }
         }
 
-        String content = String.format(Locale.ROOT,
-                "展开方位角：%.1f°%n深度 z：%.3f m%n统一倾角：%.1f°",
-                angle, depth, model.dipAngle());
-        if (nearest != null) {
-            content += String.format(Locale.ROOT,
-                    "%n最近界面深度：%.3f m", nearest.depth());
+        if (interfaceIndex >= 0) {
+            onInterfaceSelected.accept(interfaceIndex);
+        } else {
+            int layer = layerAt(angle, depth);
+            onLayerSelected.accept(layer);
         }
+    }
 
-        if (popup.getParent() == null) {
-            getChildren().add(popup);
+    /** 点击深度落在第几层；界面按当前方位角展开后的深度参与比较。 */
+    private int layerAt(double angle, double depth) {
+
+        int layer = 0;
+        for (StratumInterface stratum : model.interfaces()) {
+            if (traceDepthAt(stratum, angle) <= depth) {
+                layer++;
+            }
         }
-        popup.show(content, x, y, chartWidth(), chartHeight());
+        return Math.max(0, Math.min(model.layerCount() - 1, layer));
+    }
+
+    /** 判断点击位置是否落在某条裂缝轨迹附近，返回最近的裂缝序号。 */
+    private int fractureAt(double angle, double x, double y) {
+
+        int hit = -1;
+        double nearest = FRACTURE_HIT_TOLERANCE;
+
+        for (int i = 0; i < model.fractures().size(); i++) {
+            Fracture fracture = model.fractures().get(i);
+            double distance;
+
+            if (Math.abs(FractureGeometry.normalZ(fracture)) < 1e-9) {
+                double direction = Math.toDegrees(Math.atan2(
+                        FractureGeometry.normalY(fracture),
+                        FractureGeometry.normalX(fracture)));
+                double first = angleToX(normalizeAngle(direction + 90));
+                double second = angleToX(normalizeAngle(direction + 270));
+                distance = Math.min(Math.abs(x - first), Math.abs(x - second));
+            } else {
+                double traceDepth = FractureGeometry.traceDepth(
+                        fracture, model.wellRadius(), angle);
+                distance = Math.abs(y - zToY(traceDepth));
+            }
+
+            if (distance <= nearest) {
+                nearest = distance;
+                hit = i;
+            }
+        }
+        return hit;
     }
 
     private double traceDepthAt(StratumInterface stratum, double angleDegrees) {

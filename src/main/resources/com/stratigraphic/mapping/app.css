@@ -108,6 +108,13 @@
     -fx-padding: 8 8 8 8;
 }
 
+.fracture-card-selected {
+    -fx-background-color: #FFF8E1;
+    -fx-border-color: #E0A100;
+    -fx-border-width: 2;
+    -fx-effect: dropshadow(gaussian, rgba(224, 161, 0, 0.24), 8, 0.15, 0, 1);
+}
+
 /* ---------------- 折叠分组（TitledPane / Accordion） ---------------- */
 
 .titled-pane {
@@ -169,6 +176,13 @@
 
 .form-input:focused {
     -fx-border-color: #2F6FEB;
+}
+
+.form-input.parameter-highlight {
+    -fx-background-color: #FFF8E1;
+    -fx-border-color: #E0A100;
+    -fx-border-width: 2;
+    -fx-effect: dropshadow(gaussian, rgba(224, 161, 0, 0.22), 7, 0.15, 0, 1);
 }
 
 .field-caption {
@@ -269,13 +283,6 @@
     -fx-background-color: #FFFFFF;
 }
 
-/* 图上点出来的数据小框 */
-.chart-info-text {
-    -fx-font-size: 12px;
-    -fx-text-fill: #1A1A1A;
-    -fx-line-spacing: 4px;
-}
-
 .chart-header {
     -fx-background-color: #F5F7FA;
     -fx-border-color: transparent transparent #E3E8EE transparent;
@@ -356,4 +363,68 @@
 
 .overlay-button:hover {
     -fx-background-color: #2F6FEB;
+}
+
+/* ---------------- 三维图 ---------------- */
+
+.three-d-viewport {
+    -fx-background-color: #FFFFFF;
+}
+
+.three-d-vignette {
+    -fx-background-color: radial-gradient(center 50% 44%, radius 76%, transparent 55%, rgba(148, 163, 184, 0.16) 100%);
+}
+
+.three-d-placeholder {
+    -fx-background-color: #FFFFFF;
+    -fx-text-fill: #64748B;
+    -fx-font-size: 12px;
+    -fx-alignment: center;
+    -fx-padding: 22;
+}
+
+.three-d-hud {
+    -fx-background-color: rgba(15, 23, 42, 0.62);
+    -fx-background-radius: 14;
+    -fx-border-color: rgba(56, 189, 248, 0.18);
+    -fx-border-radius: 14;
+}
+
+.three-d-hud-text {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: #E2E8F0;
+}
+
+.three-d-hud-secondary {
+    -fx-font-size: 10px;
+    -fx-text-fill: #94A3B8;
+}
+
+.three-d-hud-button {
+    -fx-background-color: rgba(30, 41, 59, 0.88);
+    -fx-background-radius: 10;
+    -fx-border-color: rgba(56, 189, 248, 0.35);
+    -fx-border-radius: 10;
+    -fx-text-fill: #E2E8F0;
+    -fx-font-size: 10px;
+    -fx-padding: 4 9 4 9;
+    -fx-cursor: hand;
+}
+
+.three-d-hud-button:hover {
+    -fx-background-color: rgba(47, 111, 235, 0.86);
+}
+
+.three-d-chip {
+    -fx-background-color: rgba(15, 23, 42, 0.62);
+    -fx-background-radius: 10;
+    -fx-padding: 3 7 3 7;
+}
+
+.three-d-hint {
+    -fx-font-size: 9.5px;
+    -fx-text-fill: #CBD5E1;
+    -fx-background-color: rgba(15, 23, 42, 0.52);
+    -fx-background-radius: 10;
+    -fx-padding: 3 9 3 9;
 }

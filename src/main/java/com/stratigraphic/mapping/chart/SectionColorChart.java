@@ -19,7 +19,7 @@ import java.util.List;
  *
  * <p>颜色表示电阻率：浅（低阻）→ 深（高阻）；对应的色标是 {@code ColorBarPane}，
  * 挂在图面右侧的固定列里，不参与这里的缩放。
- * 点击图面任意位置会弹出该处的深度、统一倾角与电阻率。
+ * 点击裂缝、地层界面或地层色块会联动左侧参数面板定位并高亮。
  */
 public final class SectionColorChart extends SectionChart {
 
@@ -27,19 +27,24 @@ public final class SectionColorChart extends SectionChart {
     private static final double TITLE_H = 30;
     private static final double MARGIN_BOTTOM = 44;
 
+    /** 点击裂缝的容差（图面坐标像素），比细线本身宽一些，方便选中。 */
+    private static final double FRACTURE_HIT_TOLERANCE = 10;
+
     private final ColorScale scale;
 
     public SectionColorChart(StratumModel model) {
 
         super(model, TITLE_H, MARGIN_BOTTOM);
 
-        this.scale = new ColorScale(model.minResistivity(), model.maxResistivity());
+        this.scale = new ColorScale(
+                model.minSectionResistivity(), model.maxSectionResistivity());
 
         // 按工程图顺序绘制，后画的盖住先画的
         drawLayers();
         drawInterfaces();
-        drawWell();
         drawFractures();
+        // 井筒最后绘制，保证井内电阻率色带不会被裂缝线切开
+        drawWell();
         drawDepthLabels();
         drawFrame();
         drawAxes();
@@ -215,6 +220,42 @@ public final class SectionColorChart extends SectionChart {
         getChildren().add(fractureGroup);
     }
 
+    @Override
+    protected int fractureAt(double x, double y) {
+
+        int hit = -1;
+        double nearest = FRACTURE_HIT_TOLERANCE;
+
+        for (int i = 0; i < model.fractures().size(); i++) {
+            double distance = distanceToSegment(x, y, fractureLine(model.fractures().get(i)));
+            if (distance <= nearest) {
+                nearest = distance;
+                hit = i;
+            }
+        }
+        return hit;
+    }
+
+    /** 点到裂缝线段的最短距离，用于点击命中判断。 */
+    private static double distanceToSegment(double px, double py, Line line) {
+
+        double x1 = line.getStartX();
+        double y1 = line.getStartY();
+        double x2 = line.getEndX();
+        double y2 = line.getEndY();
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        double lengthSquared = dx * dx + dy * dy;
+
+        if (lengthSquared < 1e-12) {
+            return Math.hypot(px - x1, py - y1);
+        }
+
+        double t = ((px - x1) * dx + (py - y1) * dy) / lengthSquared;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+    }
+
     /** 裂缝平面与剖面 y=0 的交线。 */
     private Line fractureLine(Fracture fracture) {
 
@@ -243,21 +284,4 @@ public final class SectionColorChart extends SectionChart {
         }
     }
 
-    // ---------------- 点击查看某点的数据 ----------------
-
-    /** 没点到界面线时，报告这一点的深度、统一倾角与电阻率。 */
-    @Override
-    protected String figureText(double x, double y) {
-
-        double depth = geo.yToZ(y);
-
-        if (Math.abs(x - geo.axisX()) <= geo.wellRadiusPx()) {
-            return String.format("深度 z: %.2f m%n统一倾角 θ: %.1f°%n电阻率 ρ: %.0f",
-                    depth, model.dipAngle(), model.wellResistivity());
-        }
-
-        int layer = geo.layerAt(x, y);
-        return String.format("深度 z: %.2f m%n统一倾角 θ: %.1f°%n电阻率 ρ: %.0f",
-                depth, geo.dipAngle(), model.resistivityOf(layer));
-    }
 }

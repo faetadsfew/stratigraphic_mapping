@@ -1,6 +1,7 @@
 package com.stratigraphic.mapping.ui;
 
 import com.stratigraphic.mapping.model.Fracture;
+import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
 import com.stratigraphic.mapping.model.StratumModel;
 import com.stratigraphic.mapping.reader.StratumModelReader;
@@ -82,9 +83,9 @@ class IntegratedChartsRenderTest {
                 File output = new File("target/ui-integrated-snapshot.png");
                 ImageIO.write(SwingFXUtils.fromFXImage(image, null), "png", output);
 
-                long centerColored = coloredPixels(image, 380, 880, 130, 820);
-                long rightColored = coloredPixels(image, 930, 1438, 130, 820);
-                long rightLines = darkPixels(image, 930, 1438, 130, 820);
+                long centerColored = coloredPixels(image, 740, 1060, 130, 820);
+                long rightColored = coloredPixels(image, 1100, 1438, 130, 820);
+                long rightLines = darkPixels(image, 1100, 1438, 130, 820);
                 assertTrue(centerColored > 5_000, "中间彩色剖面没有正常渲染");
                 assertTrue(rightColored > 5_000, "右侧井壁展开图没有正常上色");
                 assertTrue(rightLines > 500, "右侧井壁展开图没有正常渲染");
@@ -127,6 +128,21 @@ class IntegratedChartsRenderTest {
                 assertEquals(2, result.fractures().size());
                 assertEquals(5.3, result.fractures().get(0).depth(), 1e-12);
                 assertEquals(60, result.fractures().get(1).normalElevationDeg(), 1e-12);
+                assertEquals(1, result.sphereFractures().size());
+                assertEquals(5.6, result.sphereFractures().get(0).centerDepth(), 1e-12);
+                assertEquals(0.08, result.sphereFractures().get(0).radius(), 1e-12);
+                assertEquals(500, result.sphereFractures().get(0).resistivity(), 1e-12);
+                assertEquals(1, result.surfaceTexts().size());
+                assertEquals("文字", result.surfaceTexts().get(0).content());
+                assertEquals(5.9, result.surfaceTexts().get(0).centerDepth(), 1e-12);
+
+                StratumModel twoSpheres = new StratumModel(
+                        model.wellRadius(), model.wellResistivity(), model.dipAngle(),
+                        model.interfaces(), model.resistivities(), model.fractures(),
+                        List.of(model.sphereFractures().get(0),
+                                new SphereFracture(5.5, 270, 0.12, 0.05, 80)));
+                pane.setModel(twoSpheres, "two spheres");
+                assertEquals(2, pane.toModel().sphereFractures().size());
             } catch (Throwable throwable) {
                 failure.set(throwable);
             } finally {

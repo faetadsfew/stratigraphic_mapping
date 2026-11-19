@@ -36,4 +36,21 @@ class FractureGeometryTest {
                 "φ=30° 时最高点应在 α=30°，而不是 α=210°");
         assertEquals(5.2, atPhi, 1e-9);
     }
+
+    @Test
+    void negativeAndWrappedAnglesAreEquivalent() {
+        Fracture canonical = new Fracture(5.3, 150, 30, 100);
+        Fracture wrapped = new Fracture(5.3, -30, -330, 100);
+
+        assertEquals(150, wrapped.normalizedElevationDeg(), 1e-12);
+        assertEquals(30, wrapped.normalizedAzimuthDeg(), 1e-12);
+        assertEquals(FractureGeometry.normalX(canonical),
+                FractureGeometry.normalX(wrapped), 1e-12);
+        assertEquals(FractureGeometry.normalY(canonical),
+                FractureGeometry.normalY(wrapped), 1e-12);
+        assertEquals(FractureGeometry.normalZ(canonical),
+                FractureGeometry.normalZ(wrapped), 1e-12);
+        assertEquals(FractureGeometry.sectionDepth(canonical, 0.25),
+                FractureGeometry.sectionDepth(wrapped, 0.25), 1e-12);
+    }
 }

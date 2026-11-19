@@ -1,8 +1,11 @@
 package com.stratigraphic.mapping.reader;
 
 import com.stratigraphic.mapping.model.Fracture;
+import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
 import com.stratigraphic.mapping.model.StratumModel;
+import com.stratigraphic.mapping.model.SurfaceText;
+import com.stratigraphic.mapping.model.WedgeFracture;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -230,6 +233,9 @@ public final class StratumModelReader {
         List<Double> depths = new ArrayList<>();
         List<Double> resistivities = new ArrayList<>();
         List<Fracture> fractures = new ArrayList<>();
+        List<SphereFracture> sphereFractures = new ArrayList<>();
+        List<WedgeFracture> wedgeFractures = new ArrayList<>();
+        List<SurfaceText> surfaceTexts = new ArrayList<>();
 
         for (int i = 0; i < lines.size(); i++) {
 
@@ -265,6 +271,14 @@ public final class StratumModelReader {
                     }
                     fractures.add(new Fracture(row[0], row[1], row[2], row[3]));
                 }
+            } else if (header.contains("球体") && header.contains("=====")) {
+                sphereFractures = parseSphereSection(lines, i + 1);
+            } else if (header.contains("楔形体个数")) {
+                wedgeFractures = parseWedgeSection(lines, i);
+            } else if (header.contains("楔形") && header.contains("=====")) {
+                wedgeFractures = parseWedgeSection(lines, i + 1);
+            } else if (header.contains("文字") && header.contains("=====")) {
+                surfaceTexts = parseTextSection(lines, i + 1);
             }
         }
 
@@ -294,7 +308,113 @@ public final class StratumModelReader {
         }
 
         return new StratumModel(wellRadius, wellResistivity, dipAngle,
-                interfaces, resistivities, fractures);
+                interfaces, resistivities, fractures, sphereFractures, wedgeFractures,
+                surfaceTexts);
+    }
+
+    private static List<SphereFracture> parseSphereSection(List<String> lines, int start) {
+
+        List<double[]> rows = numericRowsAfter(lines, start);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+
+        int count = parseInteger(rows.get(0)[0], start, "球体个数");
+        if (rows.size() - 1 != count) {
+            throw new IllegalArgumentException(
+                    "formation_G 文件写的球体个数为 " + count
+                            + "，实际列出 " + (rows.size() - 1) + " 个球体");
+        }
+
+        List<SphereFracture> spheres = new ArrayList<>(count);
+        for (int i = 1; i < rows.size(); i++) {
+            double[] row = rows.get(i);
+            if (row.length < 5) {
+                throw new IllegalArgumentException(
+                        "球体行需要「中心深度 方位角 距井轴水平距离 球半径 电阻率」五个数");
+            }
+            spheres.add(new SphereFracture(row[0], row[1], row[2], row[3], row[4]));
+        }
+        return spheres;
+    }
+
+    private static List<WedgeFracture> parseWedgeSection(List<String> lines, int start) {
+
+        List<double[]> rows = numericRowsAfter(lines, start);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+
+        int count = parseInteger(rows.get(0)[0], start, "楔形体个数");
+        if (rows.size() - 1 != count) {
+            throw new IllegalArgumentException(
+                    "第 " + start + " 行：formation_G 文件写的楔形体个数为 " + count
+                            + "，实际列出 " + (rows.size() - 1) + " 个楔形体");
+        }
+
+        List<WedgeFracture> wedges = new ArrayList<>(count);
+        for (int i = 1; i < rows.size(); i++) {
+            double[] row = rows.get(i);
+            if (row.length < 7) {
+                throw new IllegalArgumentException(
+                        "楔形体行需要「顶点方位角 顶点深度 左底方位角 左底深度 "
+                                + "右底方位角 右底深度 电阻率」七个数");
+            }
+            wedges.add(new WedgeFracture(
+                    row[0], row[1], row[2], row[3], row[4], row[5], row[6]));
+        }
+        return wedges;
+    }
+
+    private static List<SurfaceText> parseTextSection(List<String> lines, int start) {
+
+        int count = -1;
+        int countLine = start;
+        List<SurfaceText> texts = new ArrayList<>();
+
+        for (int i = start; i < lines.size(); i++) {
+            String raw = lines.get(i);
+            if (raw.stripLeading().startsWith("%") && raw.contains("=====")) {
+                if (count >= 0) {
+                    break;
+                }
+                continue;
+            }
+            String text = stripComment(raw).trim();
+            if (text.isEmpty()) {
+                continue;
+            }
+            String[] parts = text.split("\\s+");
+            if (count < 0) {
+                countLine = i + 1;
+                count = parseInteger(parseNumber(parts[0], i + 1, "文字总个数"),
+                        i + 1, "文字总个数");
+                continue;
+            }
+            if (parts.length < 5) {
+                throw new IllegalArgumentException(
+                        "文字行需要「中心方位角 中心深度 横向跨度角度 纵向跨度高度 电阻率 [文字内容]」");
+            }
+
+            String content = parts.length > 5
+                    ? String.join(" ", java.util.Arrays.copyOfRange(parts, 5, parts.length))
+                    : "文字";
+            content = content.replaceAll("^[\"']|[\"']$", "");
+            texts.add(new SurfaceText(
+                    content,
+                    parseNumber(parts[0], i + 1, "文字中心方位角"),
+                    parseNumber(parts[1], i + 1, "文字中心深度"),
+                    parseNumber(parts[2], i + 1, "文字横向跨度角度"),
+                    parseNumber(parts[3], i + 1, "文字纵向跨度高度"),
+                    parseNumber(parts[4], i + 1, "文字电阻率")));
+        }
+
+        if (count >= 0 && texts.size() != count) {
+            throw new IllegalArgumentException(
+                    "第 " + countLine + " 行：formation_G 文件写的文字总个数为 " + count
+                            + "，实际列出 " + texts.size() + " 条文字");
+        }
+        return texts;
     }
 
     private static double[] firstNumericRowAfter(List<String> lines, int start) {
@@ -329,7 +449,17 @@ public final class StratumModelReader {
 
         List<double[]> rows = new ArrayList<>();
         for (int i = start; i < lines.size(); i++) {
-            String text = stripComment(lines.get(i)).trim();
+            String raw = lines.get(i);
+            if (!rows.isEmpty() && raw.contains("楔形体个数")) {
+                break;
+            }
+            if (raw.stripLeading().startsWith("%") && raw.contains("=====")) {
+                if (!rows.isEmpty()) {
+                    break;
+                }
+                continue;
+            }
+            String text = stripComment(raw).trim();
             if (text.isEmpty()) {
                 continue;
             }
@@ -379,7 +509,9 @@ public final class StratumModelReader {
     // 去掉 # 之后的内容
     private static String stripComment(String line) {
         int hash = line.indexOf('#');
-        return hash < 0 ? line : line.substring(0, hash);
+        int percent = line.indexOf('%');
+        int cut = hash < 0 ? percent : percent < 0 ? hash : Math.min(hash, percent);
+        return cut < 0 ? line : line.substring(0, cut);
     }
 
     // 一行一个深度；兼容旧格式的「深度 夹角」两列。

@@ -2,6 +2,7 @@ package com.stratigraphic.mapping.ui;
 
 import com.stratigraphic.mapping.chart.SectionChart;
 import com.stratigraphic.mapping.chart.SectionColorChart;
+import com.stratigraphic.mapping.chart.ThreeDChart;
 import com.stratigraphic.mapping.chart.WallLineUnfoldChart;
 import com.stratigraphic.mapping.model.StratumModel;
 import com.stratigraphic.mapping.reader.StratumModelReader;
@@ -30,7 +31,8 @@ import java.nio.file.Path;
 import java.util.Locale;
 
 /**
- * 主窗口：左侧统一参数，中间彩色地层剖面，右侧彩色井壁展开图。
+ * 主窗口：左侧统一参数，右侧依次为三维图、彩色地层剖面和彩色井壁展开图。
+ * 三维图当前仅保留展示区域，暂不绘制内容。
  *
  * <p>右侧只使用当前地层模型、统一倾角和左侧输入的两个展开点 A/B，
  * 不读取模值、相位或其他额外井壁测量数据。
@@ -41,6 +43,8 @@ public final class MainController {
     private BorderPane appRoot;
     @FXML
     private VBox parameterSlot;
+    @FXML
+    private VBox threeDChartSlot;
     @FXML
     private VBox colorChartSlot;
     @FXML
@@ -61,6 +65,7 @@ public final class MainController {
 
     private final StackPane colorChartBox = new StackPane();
     private final StackPane wallChartBox = new StackPane();
+    private final StackPane threeDChartBox = new StackPane();
 
     private final Label colorChartHint = new Label(
             "载入参数或直接填写左侧数据后，点击「生成图表」显示彩色地层剖面图。");
@@ -71,6 +76,7 @@ public final class MainController {
 
     private FitPane colorFitPane;
     private FitPane wallFitPane;
+    private ThreeDChart threeDChart;
 
     @FXML
     private void initialize() {
@@ -78,6 +84,13 @@ public final class MainController {
         parameterPane.setMinSize(0, 0);
         parameterSlot.setMinSize(0, 0);
         parameterSlot.getChildren().setAll(parameterPane);
+
+        threeDChartSlot.setMinSize(0, 0);
+        threeDChartSlot.getStyleClass().add("chart-slot");
+        prepareChartBox(threeDChartBox);
+        VBox threeDWrapper = wrapWithHeader("三维图", "3D", threeDChartBox);
+        VBox.setVgrow(threeDWrapper, Priority.ALWAYS);
+        threeDChartSlot.getChildren().setAll(threeDWrapper);
 
         colorChartSlot.setMinSize(0, 0);
         colorChartSlot.getStyleClass().add("chart-slot");
@@ -97,6 +110,7 @@ public final class MainController {
 
         showColorChartHint();
         showWallChartHint();
+        showThreeDChartHint();
     }
 
     private void prepareChartBox(StackPane box) {
@@ -167,6 +181,7 @@ public final class MainController {
             // 载入只更新输入，不自动出图；等待用户点击「生成图表」。
             showColorChartHint();
             showWallChartHint();
+            showThreeDChartHint();
             statusZoom.setText("缩放 1.00×");
             info("已载入地层参数，请检查输入后点击「生成图表」");
         } catch (IOException ex) {
@@ -189,12 +204,23 @@ public final class MainController {
         drawColorChart(model);
         updateStatus(model);
 
+        boolean wallOk = true;
         try {
             drawWallChart(model);
-            info("彩色剖面和彩色井壁展开图已按当前参数更新");
         } catch (IllegalArgumentException ex) {
+            wallOk = false;
             showWallChartHint();
             error("彩色剖面已更新；井壁展开图未生成：" + ex.getMessage());
+        }
+
+        try {
+            drawThreeDChart(model);
+            if (wallOk) {
+                info("三维图、彩色剖面和彩色井壁展开图已按当前参数更新");
+            }
+        } catch (RuntimeException ex) {
+            showThreeDChartHint();
+            error("三维图未生成：" + ex.getMessage());
         }
     }
 
@@ -203,6 +229,12 @@ public final class MainController {
         ParameterPane.UnfoldInterval interval = parameterPane.toUnfoldInterval();
         WallLineUnfoldChart chart = new WallLineUnfoldChart(
                 model, interval.start(), interval.end());
+        chart.setOnFractureSelected(parameterPane::revealFracture);
+        chart.setOnSphereSelected(parameterPane::revealSphere);
+        chart.setOnWedgeSelected(parameterPane::revealWedge);
+        chart.setOnTextSelected(parameterPane::revealText);
+        chart.setOnInterfaceSelected(parameterPane::revealInterface);
+        chart.setOnLayerSelected(parameterPane::revealLayer);
         wallFitPane = installChart(chart, wallChartBox, null);
 
         statusWall.setText(String.format(Locale.ROOT,
@@ -210,10 +242,29 @@ public final class MainController {
     }
 
     private void drawColorChart(StratumModel model) {
+        SectionColorChart chart = new SectionColorChart(model);
+        chart.setOnFractureSelected(parameterPane::revealFracture);
+        chart.setOnInterfaceSelected(parameterPane::revealInterface);
+        chart.setOnLayerSelected(parameterPane::revealLayer);
         colorFitPane = installChart(
-                new SectionColorChart(model),
+                chart,
                 colorChartBox,
-                new ColorBarPane(model.minResistivity(), model.maxResistivity()));
+                new ColorBarPane(
+                        model.minSectionResistivity(), model.maxSectionResistivity()));
+    }
+
+    private void drawThreeDChart(StratumModel model) {
+        ParameterPane.UnfoldInterval interval = parameterPane.toUnfoldInterval();
+        ThreeDChart chart = new ThreeDChart(model, interval.start(), interval.end());
+        chart.setOnFractureSelected(parameterPane::revealFracture);
+        chart.setOnSphereSelected(parameterPane::revealSphere);
+        chart.setOnWedgeSelected(parameterPane::revealWedge);
+        chart.setOnLayerSelected(parameterPane::revealLayer);
+        if (threeDChart != null) {
+            threeDChart.stopAnimation();
+        }
+        threeDChart = chart;
+        threeDChartBox.getChildren().setAll(chart);
     }
 
     /** 把图装进可缩放面板；右侧可挂不参与缩放的色标。 */
@@ -250,6 +301,9 @@ public final class MainController {
     @FXML
     private void resetView() {
 
+        if (threeDChart != null) {
+            threeDChart.resetView();
+        }
         if (colorFitPane != null) {
             colorFitPane.resetZoom();
         }
@@ -278,6 +332,7 @@ public final class MainController {
         try {
             SnapshotParameters params = new SnapshotParameters();
             params.setFill(Color.WHITE);
+            params.setDepthBuffer(true);
             WritableImage image = appRoot.snapshot(params, null);
             ImageIO.write(SwingFXUtils.fromFXImage(image, null), "png", file);
             info("已导出 " + file.getName());
@@ -304,6 +359,21 @@ public final class MainController {
     private void showColorChartHint() {
         showHint(colorChartBox, colorChartHint);
         colorFitPane = null;
+    }
+
+    private void showThreeDChartHint() {
+        if (threeDChart != null) {
+            threeDChart.stopAnimation();
+            threeDChart = null;
+        }
+        Label hint = new Label(
+                "点击「生成图表」查看三维地层模型\n拖动旋转 · 滚轮缩放 · 双击复位");
+        hint.setWrapText(true);
+        hint.setAlignment(Pos.CENTER);
+        hint.getStyleClass().add("three-d-hint");
+        StackPane placeholder = new StackPane(hint);
+        placeholder.getStyleClass().add("three-d-placeholder");
+        threeDChartBox.getChildren().setAll(placeholder);
     }
 
     private void showWallChartHint() {

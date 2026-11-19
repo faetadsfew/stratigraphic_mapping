@@ -1,15 +1,23 @@
 package com.stratigraphic.mapping.ui;
 
 import com.stratigraphic.mapping.model.Fracture;
+import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
 import com.stratigraphic.mapping.model.StratumModel;
+import com.stratigraphic.mapping.model.SurfaceText;
+import com.stratigraphic.mapping.model.WedgeFracture;
+import javafx.animation.PauseTransition;
+import javafx.application.Platform;
+import javafx.geometry.Bounds;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Accordion;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Separator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.TitledPane;
@@ -20,6 +28,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -57,6 +66,22 @@ public final class ParameterPane extends BorderPane {
     private final GridPane interfaceGrid = new GridPane();
     private final GridPane layerGrid = new GridPane();
     private final VBox fractureRowsBox = new VBox(8);
+    private final VBox sphereRowsBox = new VBox(8);
+    private final VBox wedgeRowsBox = new VBox(8);
+    private final VBox textRowsBox = new VBox(8);
+
+    private ScrollPane formScroll;
+    private Accordion formAccordion;
+    private TitledPane formationSection;
+    private TitledPane fractureSection;
+    private TitledPane textSection;
+    private TextField selectedFormationField;
+    private FractureRow selectedFractureRow;
+    private SphereRow selectedSphereRow;
+    private WedgeRow selectedWedgeRow;
+    private TextRow selectedTextRow;
+    private final PauseTransition selectionScrollDelay =
+            new PauseTransition(Duration.millis(350));
 
     private final Label sourceLabel = new Label("（尚未载入参数文件）");
     private final Label messageLabel = new Label();
@@ -64,6 +89,9 @@ public final class ParameterPane extends BorderPane {
     private final List<TextField> depthFields = new ArrayList<>();
     private final List<TextField> rhoFields = new ArrayList<>();
     private final List<FractureRow> fractureRows = new ArrayList<>();
+    private final List<SphereRow> sphereRows = new ArrayList<>();
+    private final List<WedgeRow> wedgeRows = new ArrayList<>();
+    private final List<TextRow> textRows = new ArrayList<>();
 
     private Runnable onOpenFile = () -> {
     };
@@ -109,6 +137,9 @@ public final class ParameterPane extends BorderPane {
         unfoldPointBField.setText(plain(round(model.maxDepth() + 0.1)));
         rebuildRows(model.interfaceCount(), depths, rhos);
         rebuildFractureRows(model.fractures());
+        rebuildSphereRows(model.sphereFractures());
+        rebuildWedgeRows(model.wedgeFractures());
+        rebuildTextRows(model.surfaceTexts());
     }
 
     /** 把面板里当前填的内容读成一个模型；有问题就抛 {@link IllegalArgumentException}。 */
@@ -138,7 +169,8 @@ public final class ParameterPane extends BorderPane {
         }
 
         return new StratumModel(radius, wellRho, dipAngle,
-                interfaces, resistivities, readFractures());
+                interfaces, resistivities, readFractures(), readSphereFractures(),
+                readWedgeFractures(), readTexts());
     }
 
     /**
@@ -178,6 +210,158 @@ public final class ParameterPane extends BorderPane {
     /** 点底部「生成图表」时回调：更新彩色剖面和井壁展开图。 */
     public void setOnConfirmData(Runnable action) {
         this.onConfirmData = action;
+    }
+
+    /**
+     * 从图表中选中一条裂缝时调用：展开左侧「裂缝」分组，
+     * 高亮对应参数卡片，并滚动到该卡片。
+     *
+     * @param visibleIndex 裂缝在有效裂缝列表中的序号，从 0 开始
+     */
+    public void revealFracture(int visibleIndex) {
+
+        clearSphereSelection();
+        clearWedgeSelection();
+        clearTextSelection();
+        if (selectedFormationField != null) {
+            selectedFormationField.getStyleClass().remove("parameter-highlight");
+            selectedFormationField = null;
+        }
+        FractureRow row = fractureRowAt(visibleIndex);
+        selectFractureRow(row);
+        if (row == null) {
+            return;
+        }
+
+        if (formAccordion != null && fractureSection != null) {
+            fractureSection.setExpanded(true);
+            formAccordion.setExpandedPane(fractureSection);
+        }
+        row.depthField.requestFocus();
+        scrollToNode(row.card);
+    }
+
+    /** 从井壁展开图选中球体裂缝时，展开并高亮球体参数卡。 */
+    public void revealSphere(int sphereIndex) {
+
+        SphereRow row = sphereRowAt(sphereIndex);
+        clearWedgeSelection();
+        clearTextSelection();
+        if (selectedFormationField != null) {
+            selectedFormationField.getStyleClass().remove("parameter-highlight");
+            selectedFormationField = null;
+        }
+        if (selectedFractureRow != null) {
+            selectedFractureRow.card.getStyleClass().remove("fracture-card-selected");
+            selectedFractureRow = null;
+        }
+        selectSphereRow(row);
+        if (row == null) {
+            return;
+        }
+        if (formAccordion != null && fractureSection != null) {
+            fractureSection.setExpanded(true);
+            formAccordion.setExpandedPane(fractureSection);
+        }
+        row.depthField.requestFocus();
+        scrollToNode(row.card);
+    }
+
+    /** 从井壁展开图选中楔形体裂缝时，展开并高亮对应参数卡。 */
+    public void revealWedge(int wedgeIndex) {
+
+        clearSphereSelection();
+        clearTextSelection();
+        if (selectedFormationField != null) {
+            selectedFormationField.getStyleClass().remove("parameter-highlight");
+            selectedFormationField = null;
+        }
+        if (selectedFractureRow != null) {
+            selectedFractureRow.card.getStyleClass().remove("fracture-card-selected");
+            selectedFractureRow = null;
+        }
+
+        WedgeRow row = wedgeRowAt(wedgeIndex);
+        selectWedgeRow(row);
+        if (row == null) {
+            return;
+        }
+        if (formAccordion != null && fractureSection != null) {
+            fractureSection.setExpanded(true);
+            formAccordion.setExpandedPane(fractureSection);
+        }
+        row.vertexAzimuthField.requestFocus();
+        scrollToNode(row.card);
+    }
+
+    /** 从井壁展开图选中曲面文字时，展开并高亮对应参数卡。 */
+    public void revealText(int textIndex) {
+
+        clearSphereSelection();
+        clearWedgeSelection();
+        if (selectedFormationField != null) {
+            selectedFormationField.getStyleClass().remove("parameter-highlight");
+            selectedFormationField = null;
+        }
+        if (selectedFractureRow != null) {
+            selectedFractureRow.card.getStyleClass().remove("fracture-card-selected");
+            selectedFractureRow = null;
+        }
+
+        TextRow row = textRowAt(textIndex);
+        selectTextRow(row);
+        if (row == null) {
+            return;
+        }
+        if (formAccordion != null && textSection != null) {
+            textSection.setExpanded(true);
+            formAccordion.setExpandedPane(textSection);
+        }
+        row.contentField.requestFocus();
+        scrollToNode(row.card);
+    }
+
+    /** 从图表中选中地层界面时调用：展开「地层数据」并高亮对应深度输入框。 */
+    public void revealInterface(int interfaceIndex) {
+
+        if (interfaceIndex < 0 || interfaceIndex >= depthFields.size()) {
+            return;
+        }
+        revealFormationField(depthFields.get(interfaceIndex));
+    }
+
+    /** 从图表中选中地层色块时调用：展开「地层数据」并高亮对应层电阻率输入框。 */
+    public void revealLayer(int layerIndex) {
+
+        if (layerIndex < 0 || layerIndex >= rhoFields.size()) {
+            return;
+        }
+        revealFormationField(rhoFields.get(layerIndex));
+    }
+
+    private void revealFormationField(TextField field) {
+
+        clearSphereSelection();
+        clearWedgeSelection();
+        clearTextSelection();
+        if (selectedFractureRow != null) {
+            selectedFractureRow.card.getStyleClass().remove("fracture-card-selected");
+            selectedFractureRow = null;
+        }
+        if (selectedFormationField != null) {
+            selectedFormationField.getStyleClass().remove("parameter-highlight");
+        }
+        selectedFormationField = field;
+        if (!field.getStyleClass().contains("parameter-highlight")) {
+            field.getStyleClass().add("parameter-highlight");
+        }
+
+        if (formAccordion != null && formationSection != null) {
+            formationSection.setExpanded(true);
+            formAccordion.setExpandedPane(formationSection);
+        }
+        field.requestFocus();
+        scrollToNode(field);
     }
 
     /** 读取两个展开点的位置。A、B 可以倒序输入。 */
@@ -317,19 +501,24 @@ public final class ParameterPane extends BorderPane {
         TitledPane wellSection = new TitledPane("井数据", wellGrid);
         wellSection.getStyleClass().add("titled-pane");
 
-        TitledPane formationSection = new TitledPane("地层数据", formationContent);
+        formationSection = new TitledPane("地层数据", formationContent);
         formationSection.getStyleClass().add("titled-pane");
 
-        TitledPane fractureSection = buildFractureSection();
+        fractureSection = buildFractureSection();
+        textSection = buildTextSection();
         TitledPane wallSection = buildUnfoldSection();
 
         Accordion accordion = new Accordion(
-                wellSection, formationSection, fractureSection, wallSection);
+                wellSection, formationSection, fractureSection, textSection, wallSection);
+        formAccordion = accordion;
+        // 展开的分组必须按内容高度撑开，再由外层 ScrollPane 负责滚动，不能被视口压扁裁切。
+        accordion.setMinHeight(Region.USE_PREF_SIZE);
 
         // 一进来保持折叠，参数较多时不会把左侧面板撑满
         wellSection.setExpanded(false);
         formationSection.setExpanded(false);
         fractureSection.setExpanded(false);
+        textSection.setExpanded(false);
         wallSection.setExpanded(false);
         accordion.setExpandedPane(null);
 
@@ -337,6 +526,7 @@ public final class ParameterPane extends BorderPane {
         form.setPadding(new Insets(0, 14, 18, 14));
 
         ScrollPane scroll = new ScrollPane(form);
+        formScroll = scroll;
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("form-scroll");
         // 左栏宽度固定，内容随栏宽收缩，不显示横向滚动条
@@ -351,7 +541,8 @@ public final class ParameterPane extends BorderPane {
 
         Label hint = new Label(
                 "裂缝采用 formation_G 格式：交点深度、法向仰角、法向方位角和 R1；"
-                        + "R1 同时用于两幅图中的裂缝颜色分级。");
+                        + "R1 同时用于两幅图中的裂缝颜色分级。"
+                        + "仰角和方位角可输入负数或任意周期等价角度。");
         hint.getStyleClass().add("hint");
         hint.setWrapText(true);
         hint.setMaxWidth(Double.MAX_VALUE);
@@ -376,7 +567,10 @@ public final class ParameterPane extends BorderPane {
         HBox actions = new HBox(6, addButton, removeButton);
         actions.setAlignment(Pos.CENTER_LEFT);
 
-        VBox content = new VBox(8, hint, actions, fractureRowsBox);
+        VBox sphereSection = buildSphereSection();
+        VBox wedgeSection = buildWedgeSection();
+        VBox content = new VBox(8, hint, actions, fractureRowsBox,
+                new Separator(), sphereSection, new Separator(), wedgeSection);
         TitledPane pane = new TitledPane("裂缝", content);
         pane.getStyleClass().add("titled-pane");
 
@@ -386,10 +580,372 @@ public final class ParameterPane extends BorderPane {
         return pane;
     }
 
+    /** 裂缝框下方的球体裂缝输入区，可添加多条。 */
+    private VBox buildSphereSection() {
+
+        Label title = new Label("球体裂缝（圆形）");
+        title.getStyleClass().add("section-title");
+
+        Label hint = new Label("对应 formation_G 第 4 节，每条球体均绘制在井壁展开图。");
+        hint.getStyleClass().add("hint");
+        hint.setWrapText(true);
+        hint.setMaxWidth(Double.MAX_VALUE);
+
+        Button addButton = smallButton("＋ 添加球体");
+        addButton.setOnAction(e -> {
+            if (sphereRows.size() >= 20) {
+                showError("球体裂缝最多 20 条");
+                return;
+            }
+            addSphereRow(null);
+            onDataChanged.run();
+        });
+
+        Button removeButton = smallButton("－ 删除最后一个球体");
+        removeButton.setOnAction(e -> {
+            if (!sphereRows.isEmpty()) {
+                removeSphereRow(sphereRows.get(sphereRows.size() - 1));
+            }
+        });
+
+        HBox actions = new HBox(6, addButton, removeButton);
+        actions.setAlignment(Pos.CENTER_LEFT);
+
+        return new VBox(8, title, hint, actions, sphereRowsBox);
+    }
+
+    private void rebuildSphereRows(List<SphereFracture> spheres) {
+
+        sphereRows.clear();
+        sphereRowsBox.getChildren().clear();
+        selectedSphereRow = null;
+
+        for (SphereFracture sphere : spheres) {
+            addSphereRow(sphere);
+        }
+        renumberSphereRows();
+    }
+
+    private List<SphereFracture> readSphereFractures() {
+
+        List<SphereFracture> spheres = new ArrayList<>();
+        for (int i = 0; i < sphereRows.size(); i++) {
+            SphereFracture sphere = sphereRows.get(i).toSphere(i + 1);
+            if (sphere != null) {
+                spheres.add(sphere);
+            }
+        }
+        return spheres;
+    }
+
+    private void addSphereRow(SphereFracture sphere) {
+
+        SphereRow row = new SphereRow(sphere);
+        row.deleteButton.setOnAction(e -> removeSphereRow(row));
+        sphereRows.add(row);
+        sphereRowsBox.getChildren().add(row.card);
+        renumberSphereRows();
+    }
+
+    private void removeSphereRow(SphereRow row) {
+
+        sphereRows.remove(row);
+        sphereRowsBox.getChildren().remove(row.card);
+        if (selectedSphereRow == row) {
+            selectedSphereRow = null;
+        }
+        renumberSphereRows();
+        onDataChanged.run();
+    }
+
+    private void renumberSphereRows() {
+        for (int i = 0; i < sphereRows.size(); i++) {
+            sphereRows.get(i).title.setText("球体裂缝 " + (i + 1));
+        }
+    }
+
+    private SphereRow sphereRowAt(int visibleIndex) {
+
+        if (visibleIndex < 0) {
+            return null;
+        }
+        int current = 0;
+        for (SphereRow row : sphereRows) {
+            if (row.allBlank()) {
+                continue;
+            }
+            if (current == visibleIndex) {
+                return row;
+            }
+            current++;
+        }
+        return null;
+    }
+
+    private void selectSphereRow(SphereRow selected) {
+
+        clearSphereSelection();
+        selectedSphereRow = selected;
+        if (selected != null
+                && !selected.card.getStyleClass().contains("fracture-card-selected")) {
+            selected.card.getStyleClass().add("fracture-card-selected");
+        }
+    }
+
+    private void clearSphereSelection() {
+        if (selectedSphereRow != null) {
+            selectedSphereRow.card.getStyleClass().remove("fracture-card-selected");
+            selectedSphereRow = null;
+        }
+    }
+
+    /** 球体裂缝下方的楔形体裂缝输入区。 */
+    private VBox buildWedgeSection() {
+
+        Label title = new Label("楔形体裂缝（三角）");
+        title.getStyleClass().add("section-title");
+
+        Label hint = new Label(
+                "对应 formation_G 第 5 节，7 个数依次为顶点方位角/深度、"
+                        + "左底方位角/深度、右底方位角/深度、电阻率；只绘制在井壁展开图。");
+        hint.getStyleClass().add("hint");
+        hint.setWrapText(true);
+        hint.setMaxWidth(Double.MAX_VALUE);
+
+        Button addButton = smallButton("＋ 添加楔形体");
+        addButton.setOnAction(e -> {
+            if (wedgeRows.size() >= 20) {
+                showError("楔形体裂缝最多 20 条");
+                return;
+            }
+            addWedgeRow(null);
+            onDataChanged.run();
+        });
+
+        Button removeButton = smallButton("－ 删除最后一个楔形体");
+        removeButton.setOnAction(e -> {
+            if (!wedgeRows.isEmpty()) {
+                removeWedgeRow(wedgeRows.get(wedgeRows.size() - 1));
+            }
+        });
+
+        HBox actions = new HBox(6, addButton, removeButton);
+        actions.setAlignment(Pos.CENTER_LEFT);
+
+        return new VBox(8, title, hint, actions, wedgeRowsBox);
+    }
+
+    private void rebuildWedgeRows(List<WedgeFracture> wedges) {
+
+        wedgeRows.clear();
+        wedgeRowsBox.getChildren().clear();
+        selectedWedgeRow = null;
+
+        for (WedgeFracture wedge : wedges) {
+            addWedgeRow(wedge);
+        }
+        renumberWedgeRows();
+    }
+
+    private List<WedgeFracture> readWedgeFractures() {
+
+        List<WedgeFracture> wedges = new ArrayList<>();
+        for (int i = 0; i < wedgeRows.size(); i++) {
+            WedgeFracture wedge = wedgeRows.get(i).toWedge(i + 1);
+            if (wedge != null) {
+                wedges.add(wedge);
+            }
+        }
+        return wedges;
+    }
+
+    private void addWedgeRow(WedgeFracture wedge) {
+
+        WedgeRow row = new WedgeRow(wedge);
+        row.deleteButton.setOnAction(e -> removeWedgeRow(row));
+        wedgeRows.add(row);
+        wedgeRowsBox.getChildren().add(row.card);
+        renumberWedgeRows();
+    }
+
+    private void removeWedgeRow(WedgeRow row) {
+
+        wedgeRows.remove(row);
+        wedgeRowsBox.getChildren().remove(row.card);
+        if (selectedWedgeRow == row) {
+            selectedWedgeRow = null;
+        }
+        renumberWedgeRows();
+        onDataChanged.run();
+    }
+
+    private void renumberWedgeRows() {
+        for (int i = 0; i < wedgeRows.size(); i++) {
+            wedgeRows.get(i).title.setText("楔形体裂缝 " + (i + 1));
+        }
+    }
+
+    private WedgeRow wedgeRowAt(int visibleIndex) {
+
+        if (visibleIndex < 0) {
+            return null;
+        }
+        int current = 0;
+        for (WedgeRow row : wedgeRows) {
+            if (row.allBlank()) {
+                continue;
+            }
+            if (current == visibleIndex) {
+                return row;
+            }
+            current++;
+        }
+        return null;
+    }
+
+    private void selectWedgeRow(WedgeRow selected) {
+
+        clearWedgeSelection();
+        selectedWedgeRow = selected;
+        if (selected != null
+                && !selected.card.getStyleClass().contains("fracture-card-selected")) {
+            selected.card.getStyleClass().add("fracture-card-selected");
+        }
+    }
+
+    private void clearWedgeSelection() {
+        if (selectedWedgeRow != null) {
+            selectedWedgeRow.card.getStyleClass().remove("fracture-card-selected");
+            selectedWedgeRow = null;
+        }
+    }
+
+    /** 独立的曲面文字参数分组。 */
+    private TitledPane buildTextSection() {
+
+        Label hint = new Label(
+                "对应 formation_G 第 6 节：中心方位角、中心深度、横向跨度角度、"
+                        + "纵向跨度高度、电阻率；可选文字内容写在五个数字之后。");
+        hint.getStyleClass().add("hint");
+        hint.setWrapText(true);
+        hint.setMaxWidth(Double.MAX_VALUE);
+
+        Button addButton = smallButton("＋ 添加文字");
+        addButton.setOnAction(e -> {
+            if (textRows.size() >= 20) {
+                showError("曲面文字最多 20 条");
+                return;
+            }
+            addTextRow(null);
+            onDataChanged.run();
+        });
+
+        Button removeButton = smallButton("－ 删除最后一条文字");
+        removeButton.setOnAction(e -> {
+            if (!textRows.isEmpty()) {
+                removeTextRow(textRows.get(textRows.size() - 1));
+            }
+        });
+
+        HBox actions = new HBox(6, addButton, removeButton);
+        actions.setAlignment(Pos.CENTER_LEFT);
+
+        VBox content = new VBox(8, hint, actions, textRowsBox);
+        TitledPane pane = new TitledPane("曲面文字", content);
+        pane.getStyleClass().add("titled-pane");
+        return pane;
+    }
+
+    private void rebuildTextRows(List<SurfaceText> texts) {
+
+        textRows.clear();
+        textRowsBox.getChildren().clear();
+        selectedTextRow = null;
+
+        for (SurfaceText text : texts) {
+            addTextRow(text);
+        }
+        renumberTextRows();
+    }
+
+    private List<SurfaceText> readTexts() {
+
+        List<SurfaceText> texts = new ArrayList<>();
+        for (int i = 0; i < textRows.size(); i++) {
+            SurfaceText text = textRows.get(i).toText(i + 1);
+            if (text != null) {
+                texts.add(text);
+            }
+        }
+        return texts;
+    }
+
+    private void addTextRow(SurfaceText text) {
+
+        TextRow row = new TextRow(text);
+        row.deleteButton.setOnAction(e -> removeTextRow(row));
+        textRows.add(row);
+        textRowsBox.getChildren().add(row.card);
+        renumberTextRows();
+    }
+
+    private void removeTextRow(TextRow row) {
+
+        textRows.remove(row);
+        textRowsBox.getChildren().remove(row.card);
+        if (selectedTextRow == row) {
+            selectedTextRow = null;
+        }
+        renumberTextRows();
+        onDataChanged.run();
+    }
+
+    private void renumberTextRows() {
+        for (int i = 0; i < textRows.size(); i++) {
+            textRows.get(i).title.setText("文字 " + (i + 1));
+        }
+    }
+
+    private TextRow textRowAt(int visibleIndex) {
+
+        if (visibleIndex < 0) {
+            return null;
+        }
+        int current = 0;
+        for (TextRow row : textRows) {
+            if (row.allBlank()) {
+                continue;
+            }
+            if (current == visibleIndex) {
+                return row;
+            }
+            current++;
+        }
+        return null;
+    }
+
+    private void selectTextRow(TextRow selected) {
+
+        clearTextSelection();
+        selectedTextRow = selected;
+        if (selected != null
+                && !selected.card.getStyleClass().contains("fracture-card-selected")) {
+            selected.card.getStyleClass().add("fracture-card-selected");
+        }
+    }
+
+    private void clearTextSelection() {
+        if (selectedTextRow != null) {
+            selectedTextRow.card.getStyleClass().remove("fracture-card-selected");
+            selectedTextRow = null;
+        }
+    }
+
     private void rebuildFractureRows(List<Fracture> fractures) {
 
         fractureRows.clear();
         fractureRowsBox.getChildren().clear();
+        selectedFractureRow = null;
 
         if (fractures.isEmpty()) {
             addFractureRow(null);
@@ -414,6 +970,9 @@ public final class ParameterPane extends BorderPane {
 
         fractureRows.remove(row);
         fractureRowsBox.getChildren().remove(row.card);
+        if (selectedFractureRow == row) {
+            selectedFractureRow = null;
+        }
         if (fractureRows.isEmpty()) {
             addFractureRow(null);
         }
@@ -437,6 +996,68 @@ public final class ParameterPane extends BorderPane {
             }
         }
         return fractures;
+    }
+
+    /** 找到第 visibleIndex 条非空裂缝对应的参数卡片。 */
+    private FractureRow fractureRowAt(int visibleIndex) {
+
+        if (visibleIndex < 0) {
+            return null;
+        }
+
+        int current = 0;
+        for (FractureRow row : fractureRows) {
+            if (row.allBlank()) {
+                continue;
+            }
+            if (current == visibleIndex) {
+                return row;
+            }
+            current++;
+        }
+        return null;
+    }
+
+    private void selectFractureRow(FractureRow selected) {
+
+        if (selectedFractureRow != null) {
+            selectedFractureRow.card.getStyleClass().remove("fracture-card-selected");
+        }
+        selectedFractureRow = selected;
+        if (selected != null
+                && !selected.card.getStyleClass().contains("fracture-card-selected")) {
+            selected.card.getStyleClass().add("fracture-card-selected");
+        }
+    }
+
+    /** 等分组完成展开和布局后，再把目标参数滚到左侧面板可视区内。 */
+    private void scrollToNode(Node node) {
+
+        selectionScrollDelay.stop();
+        selectionScrollDelay.setOnFinished(event -> Platform.runLater(() -> {
+            if (formScroll == null || formScroll.getContent() == null
+                    || node.getScene() == null) {
+                return;
+            }
+
+            Node content = formScroll.getContent();
+            formScroll.applyCss();
+            formScroll.layout();
+
+            Bounds nodeBounds = node.localToScene(node.getBoundsInLocal());
+            Bounds contentBounds = content.localToScene(content.getBoundsInLocal());
+            double contentHeight = contentBounds.getHeight();
+            double viewportHeight = formScroll.getViewportBounds().getHeight();
+            if (contentHeight <= viewportHeight || viewportHeight <= 0) {
+                return;
+            }
+
+            double nodeTop = nodeBounds.getMinY() - contentBounds.getMinY();
+            double target = (nodeTop - viewportHeight * 0.25)
+                    / (contentHeight - viewportHeight);
+            formScroll.setVvalue(Math.max(0, Math.min(1, target)));
+        }));
+        selectionScrollDelay.play();
     }
 
     /** 井壁展开参数：仅输入两个点的位置。 */
@@ -594,6 +1215,7 @@ public final class ParameterPane extends BorderPane {
 
         depthFields.clear();
         rhoFields.clear();
+        selectedFormationField = null;
 
         rebuildInterfaceGrid(count, depths);
         rebuildLayerGrid(count, rhos);
@@ -845,6 +1467,253 @@ public final class ParameterPane extends BorderPane {
             return depthField.getText().isBlank()
                     && elevationField.getText().isBlank()
                     && azimuthField.getText().isBlank()
+                    && resistivityField.getText().isBlank();
+        }
+    }
+
+    private final class SphereRow {
+
+        private final VBox card = new VBox(6);
+        private final Label title = new Label();
+        private final Button deleteButton = smallButton("删除");
+
+        private final TextField depthField;
+        private final TextField azimuthField;
+        private final TextField distanceField;
+        private final TextField radiusField;
+        private final TextField resistivityField;
+
+        private SphereRow(SphereFracture sphere) {
+
+            title.getStyleClass().add("section-title");
+
+            HBox header = new HBox(6, title, new Region(), deleteButton);
+            HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
+            header.setAlignment(Pos.CENTER_LEFT);
+
+            depthField = numberField(
+                    sphere == null ? "" : plain(sphere.centerDepth()), 86);
+            azimuthField = numberField(
+                    sphere == null ? "" : plain(sphere.azimuthDeg()), 86);
+            distanceField = numberField(
+                    sphere == null ? "" : plain(sphere.distanceFromAxis()), 86);
+            radiusField = numberField(
+                    sphere == null ? "" : plain(sphere.radius()), 86);
+            resistivityField = numberField(
+                    sphere == null ? "" : plain(sphere.resistivity()), 86);
+
+            GridPane grid = new GridPane();
+            grid.setHgap(7);
+            grid.setVgap(6);
+            grid.getColumnConstraints().addAll(
+                    column(118, HPos.LEFT), column(86, HPos.LEFT));
+
+            addRow(grid, 0, "中心深度 / m", depthField);
+            addRow(grid, 1, "方位角 / °", azimuthField);
+            addRow(grid, 2, "距井轴水平距离 / m", distanceField);
+            addRow(grid, 3, "球半径 / m", radiusField);
+            addRow(grid, 4, "电阻率 / (Ω·m)", resistivityField);
+
+            card.getStyleClass().addAll("fracture-card", "sphere-fracture-card");
+            card.getChildren().addAll(header, grid);
+        }
+
+        private SphereFracture toSphere(int index) {
+
+            if (allBlank()) {
+                return null;
+            }
+            return new SphereFracture(
+                    readNumber(depthField.getText(),
+                            "第 " + index + " 个球体中心深度"),
+                    readNumber(azimuthField.getText(),
+                            "第 " + index + " 个球体方位角"),
+                    readNumber(distanceField.getText(),
+                            "第 " + index + " 个球体距井轴水平距离"),
+                    readNumber(radiusField.getText(),
+                            "第 " + index + " 个球体半径"),
+                    readNumber(resistivityField.getText(),
+                            "第 " + index + " 个球体电阻率"));
+        }
+
+        private boolean allBlank() {
+            return depthField.getText().isBlank()
+                    && azimuthField.getText().isBlank()
+                    && distanceField.getText().isBlank()
+                    && radiusField.getText().isBlank()
+                    && resistivityField.getText().isBlank();
+        }
+    }
+
+    private final class WedgeRow {
+
+        private final VBox card = new VBox(6);
+        private final Label title = new Label();
+        private final Button deleteButton = smallButton("删除");
+
+        private final TextField vertexAzimuthField;
+        private final TextField vertexDepthField;
+        private final TextField leftAzimuthField;
+        private final TextField leftDepthField;
+        private final TextField rightAzimuthField;
+        private final TextField rightDepthField;
+        private final TextField resistivityField;
+
+        private WedgeRow(WedgeFracture wedge) {
+
+            title.getStyleClass().add("section-title");
+
+            HBox header = new HBox(6, title, new Region(), deleteButton);
+            HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
+            header.setAlignment(Pos.CENTER_LEFT);
+
+            vertexAzimuthField = numberField(
+                    wedge == null ? "" : plain(wedge.vertexAzimuthDeg()), 86);
+            vertexDepthField = numberField(
+                    wedge == null ? "" : plain(wedge.vertexDepth()), 86);
+            leftAzimuthField = numberField(
+                    wedge == null ? "" : plain(wedge.leftAzimuthDeg()), 86);
+            leftDepthField = numberField(
+                    wedge == null ? "" : plain(wedge.leftDepth()), 86);
+            rightAzimuthField = numberField(
+                    wedge == null ? "" : plain(wedge.rightAzimuthDeg()), 86);
+            rightDepthField = numberField(
+                    wedge == null ? "" : plain(wedge.rightDepth()), 86);
+            resistivityField = numberField(
+                    wedge == null ? "" : plain(wedge.resistivity()), 86);
+
+            GridPane grid = new GridPane();
+            grid.setHgap(7);
+            grid.setVgap(6);
+            grid.getColumnConstraints().addAll(
+                    column(112, HPos.LEFT), column(86, HPos.LEFT));
+
+            addRow(grid, 0, "顶点方位角 / °", vertexAzimuthField);
+            addRow(grid, 1, "顶点深度 / m", vertexDepthField);
+            addRow(grid, 2, "左底方位角 / °", leftAzimuthField);
+            addRow(grid, 3, "左底深度 / m", leftDepthField);
+            addRow(grid, 4, "右底方位角 / °", rightAzimuthField);
+            addRow(grid, 5, "右底深度 / m", rightDepthField);
+            addRow(grid, 6, "电阻率 / (Ω·m)", resistivityField);
+
+            card.getStyleClass().add("fracture-card");
+            card.getChildren().addAll(header, grid);
+        }
+
+        private WedgeFracture toWedge(int index) {
+
+            if (allBlank()) {
+                return null;
+            }
+            return new WedgeFracture(
+                    readNumber(vertexAzimuthField.getText(),
+                            "第 " + index + " 个楔形体顶点方位角"),
+                    readNumber(vertexDepthField.getText(),
+                            "第 " + index + " 个楔形体顶点深度"),
+                    readNumber(leftAzimuthField.getText(),
+                            "第 " + index + " 个楔形体左底方位角"),
+                    readNumber(leftDepthField.getText(),
+                            "第 " + index + " 个楔形体左底深度"),
+                    readNumber(rightAzimuthField.getText(),
+                            "第 " + index + " 个楔形体右底方位角"),
+                    readNumber(rightDepthField.getText(),
+                            "第 " + index + " 个楔形体右底深度"),
+                    readNumber(resistivityField.getText(),
+                            "第 " + index + " 个楔形体电阻率"));
+        }
+
+        private boolean allBlank() {
+            return vertexAzimuthField.getText().isBlank()
+                    && vertexDepthField.getText().isBlank()
+                    && leftAzimuthField.getText().isBlank()
+                    && leftDepthField.getText().isBlank()
+                    && rightAzimuthField.getText().isBlank()
+                    && rightDepthField.getText().isBlank()
+                    && resistivityField.getText().isBlank();
+        }
+    }
+
+    private final class TextRow {
+
+        private final VBox card = new VBox(6);
+        private final Label title = new Label();
+        private final Button deleteButton = smallButton("删除");
+
+        private final TextField contentField = new TextField();
+        private final TextField azimuthField;
+        private final TextField depthField;
+        private final TextField angularSpanField;
+        private final TextField depthSpanField;
+        private final TextField resistivityField;
+
+        private TextRow(SurfaceText text) {
+
+            title.getStyleClass().add("section-title");
+
+            HBox header = new HBox(6, title, new Region(), deleteButton);
+            HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
+            header.setAlignment(Pos.CENTER_LEFT);
+
+            contentField.setText(text == null ? "" : text.content());
+            contentField.getStyleClass().add("form-input");
+            contentField.setPrefWidth(180);
+            contentField.textProperty().addListener((o, was, is) -> onDataChanged.run());
+
+            azimuthField = numberField(
+                    text == null ? "" : plain(text.centerAzimuthDeg()), 86);
+            depthField = numberField(
+                    text == null ? "" : plain(text.centerDepth()), 86);
+            angularSpanField = numberField(
+                    text == null ? "" : plain(text.angularSpanDeg()), 86);
+            depthSpanField = numberField(
+                    text == null ? "" : plain(text.depthSpanM()), 86);
+            resistivityField = numberField(
+                    text == null ? "" : plain(text.resistivity()), 86);
+
+            GridPane grid = new GridPane();
+            grid.setHgap(7);
+            grid.setVgap(6);
+            grid.getColumnConstraints().addAll(
+                    column(112, HPos.LEFT), column(86, HPos.LEFT));
+
+            addRow(grid, 0, "文字内容", contentField);
+            addRow(grid, 1, "中心方位角 / °", azimuthField);
+            addRow(grid, 2, "中心深度 / m", depthField);
+            addRow(grid, 3, "横向跨度角度 / °", angularSpanField);
+            addRow(grid, 4, "纵向跨度高度 / m", depthSpanField);
+            addRow(grid, 5, "电阻率 / (Ω·m)", resistivityField);
+
+            card.getStyleClass().add("fracture-card");
+            card.getChildren().addAll(header, grid);
+        }
+
+        private SurfaceText toText(int index) {
+
+            if (allBlank()) {
+                return null;
+            }
+            String content = contentField.getText().isBlank()
+                    ? "文字" : contentField.getText().trim();
+            return new SurfaceText(
+                    content,
+                    readNumber(azimuthField.getText(),
+                            "第 " + index + " 条文字中心方位角"),
+                    readNumber(depthField.getText(),
+                            "第 " + index + " 条文字中心深度"),
+                    readNumber(angularSpanField.getText(),
+                            "第 " + index + " 条文字横向跨度角度"),
+                    readNumber(depthSpanField.getText(),
+                            "第 " + index + " 条文字纵向跨度高度"),
+                    readNumber(resistivityField.getText(),
+                            "第 " + index + " 条文字电阻率"));
+        }
+
+        private boolean allBlank() {
+            return contentField.getText().isBlank()
+                    && azimuthField.getText().isBlank()
+                    && depthField.getText().isBlank()
+                    && angularSpanField.getText().isBlank()
+                    && depthSpanField.getText().isBlank()
                     && resistivityField.getText().isBlank();
         }
     }

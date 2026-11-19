@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MainViewNavigationTest {
 
     @Test
-    void mainViewShowsColorSectionAndWallUnfoldSideBySide() throws Exception {
+    void mainViewShowsThreeDColorSectionAndWallUnfoldSideBySide() throws Exception {
 
         startToolkit();
 
@@ -44,13 +44,18 @@ class MainViewNavigationTest {
                 root.applyCss();
                 root.layout();
 
+                Label threeDTitle = findLabel(root, "三维图");
                 Label colorTitle = findLabel(root, "岩性剖面");
                 Label wallTitle = findLabel(root, "井壁展开图（彩色）");
+                assertNotNull(threeDTitle, "主界面未找到三维图标题");
                 assertNotNull(colorTitle, "主界面未找到彩色剖面标题");
                 assertNotNull(wallTitle, "主界面未找到井壁展开图标题");
 
+                Bounds threeDBounds = threeDTitle.localToScene(threeDTitle.getBoundsInLocal());
                 Bounds colorBounds = colorTitle.localToScene(colorTitle.getBoundsInLocal());
                 Bounds wallBounds = wallTitle.localToScene(wallTitle.getBoundsInLocal());
+                assertTrue(threeDBounds.getMinX() < colorBounds.getMinX(),
+                        "三维图应位于彩色剖面左侧");
                 assertTrue(colorBounds.getMinX() < wallBounds.getMinX(),
                         "彩色剖面应位于井壁展开图左侧");
                 assertTrue(wallBounds.getMinX() < scene.getWidth(),
@@ -66,7 +71,7 @@ class MainViewNavigationTest {
 
         assertTrue(checked.await(15, TimeUnit.SECONDS), "主界面检查超时");
         if (failure.get() != null) {
-            throw new AssertionError("主界面三栏布局检查失败", failure.get());
+            throw new AssertionError("主界面三图布局检查失败", failure.get());
         }
     }
 
