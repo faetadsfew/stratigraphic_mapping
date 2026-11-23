@@ -782,4 +782,3 @@ final class ThreeDGeometry {
         return meshView(points, normals, texCoords, triangles, color, opacity, 48);
     }
 }
-

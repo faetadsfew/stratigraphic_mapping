@@ -428,3 +428,67 @@
     -fx-background-radius: 10;
     -fx-padding: 3 9 3 9;
 }
+
+.imaging-page .imaging-parameters {
+    -fx-font-size: 11px;
+}
+
+.imaging-page .imaging-parameters .ghost-button {
+    -fx-padding: 5 8;
+    -fx-font-size: 12px;
+}
+
+.imaging-page .imaging-parameters .titled-pane > .title {
+    -fx-padding: 4 6;
+}
+
+.imaging-page .imaging-parameters .titled-pane > .title > .text {
+    -fx-font-size: 11px;
+}
+
+.imaging-page .imaging-parameters .titled-pane > *.content {
+    -fx-padding: 6;
+}
+
+.imaging-page .imaging-parameters .progress-bar {
+    -fx-pref-height: 8;
+    -fx-min-height: 8;
+    -fx-max-height: 8;
+    -fx-padding: 0;
+    -fx-background-color: transparent;
+}
+
+.imaging-page .imaging-parameters .progress-bar > .track {
+    -fx-background-color: #DDE6EF;
+    -fx-background-insets: 0;
+    -fx-background-radius: 3;
+    -fx-padding: 0;
+}
+
+.imaging-page .imaging-parameters .progress-bar > .bar {
+    -fx-background-color: #2F6FEB;
+    -fx-background-insets: 0;
+    -fx-background-radius: 3;
+    -fx-padding: 0;
+}
+
+.imaging-page .imaging-parameters .separator {
+    -fx-padding: 3 0;
+}
+
+.response-inspector {
+    -fx-padding: 7 9;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 4;
+    -fx-border-color: #557DA6;
+    -fx-border-radius: 4;
+    -fx-text-fill: #183D60;
+    -fx-font-size: 11px;
+    -fx-effect: dropshadow(gaussian, rgba(23, 49, 78, 0.2), 6, 0, 1, 2);
+}
+
+.chart-info-text {
+    -fx-font-size: 12px;
+    -fx-text-fill: #1A1A1A;
+    -fx-line-spacing: 4px;
+}

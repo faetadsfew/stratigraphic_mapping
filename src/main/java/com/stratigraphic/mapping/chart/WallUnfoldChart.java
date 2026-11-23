@@ -2,6 +2,7 @@ package com.stratigraphic.mapping.chart;
 
 import com.stratigraphic.mapping.wall.WallGeometry;
 import com.stratigraphic.mapping.wall.WallData;
+import javafx.geometry.Point3D;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.ImageView;
@@ -42,6 +43,7 @@ public final class WallUnfoldChart extends Pane {
     private final WallAmplitudeScale scale;
     private final ImageView imageView = new ImageView();
     private final Canvas overlay = new Canvas(chartWidth(), chartHeight());
+    private final ChartPopup popup = new ChartPopup();
 
     private Consumer<String> onDataSelected = message -> {
     };
@@ -276,18 +278,24 @@ public final class WallUnfoldChart extends Pane {
 
     private void handleClick(MouseEvent event) {
 
+        if (popup.getParent() == null) {
+            getChildren().add(popup);
+        }
+
         double x = event.getX();
         double y = event.getY();
         double plotRight = MARGIN_LEFT + DATA_WIDTH;
         double plotBottom = MARGIN_TOP + DATA_HEIGHT;
 
         if (x < MARGIN_LEFT || x > plotRight || y < MARGIN_TOP || y > plotBottom) {
+            popup.hide();
             return;
         }
 
         double arc = (x - MARGIN_LEFT) / DATA_WIDTH * geometry.ellipsePerimeter();
         if (isSeparator(arc)) {
             String message = "该位置不是有效测量区域。";
+            popup.show(message, x, y, chartWidth(), chartHeight());
             onDataSelected.accept(message);
             return;
         }
@@ -300,12 +308,25 @@ public final class WallUnfoldChart extends Pane {
         double bottomMd = geometry.mdBoundaryAtArc(arc, geometry.zBottom());
         if (md < topMd || md > bottomMd) {
             String message = "该位置不是有效测量区域。";
+            popup.show(message, x, y, chartWidth(), chartHeight());
             onDataSelected.accept(message);
             return;
         }
 
         double amplitude = geometry.data().amplitudeAt(electrode, md);
         double phase = geometry.data().phaseAt(electrode, md);
+        Point3D point = geometry.pointAtElectrodeAndMd(electrode, md);
+
+        String content = String.format(Locale.ROOT,
+                "深度 MD：%.8f m%n"
+                        + "电极：%d%n"
+                        + "模值：%.4f Ω·m%n"
+                        + "相位：%.4f°%n"
+                        + "X/Y/Z：%.4f / %.4f / %.4f m",
+                md, electrode + 1, amplitude, phase,
+                point.getX(), point.getY(), point.getZ());
+
+        popup.show(content, x, y, chartWidth(), chartHeight());
         onDataSelected.accept(String.format(Locale.ROOT,
                 "电极 %d · MD %.5f m · 模值 %.3f Ω·m · 相位 %.3f°",
                 electrode + 1, md, amplitude, phase));

@@ -32,7 +32,6 @@ import java.util.Locale;
 
 /**
  * 主窗口：左侧统一参数，右侧依次为三维图、彩色地层剖面和彩色井壁展开图。
- * 三维图当前仅保留展示区域，暂不绘制内容。
  *
  * <p>右侧只使用当前地层模型、统一倾角和左侧输入的两个展开点 A/B，
  * 不读取模值、相位或其他额外井壁测量数据。
@@ -77,9 +76,16 @@ public final class MainController {
     private FitPane colorFitPane;
     private FitPane wallFitPane;
     private ThreeDChart threeDChart;
+    private WallChartState.Snapshot wallSnapshot;
 
     @FXML
     private void initialize() {
+
+        appRoot.sceneProperty().addListener((observable, previous, current) -> {
+            if (current != null) {
+                WallChartState.in(current).set(wallSnapshot);
+            }
+        });
 
         parameterPane.setMinSize(0, 0);
         parameterSlot.setMinSize(0, 0);
@@ -146,9 +152,9 @@ public final class MainController {
             PageNavigation.show(appRoot,
                     "main-view.fxml",
                     "wall-unfold-view.fxml",
-                    "井壁电阻率展开图");
+                    "电成像响应模拟");
         } catch (IOException | IllegalStateException ex) {
-            error("打开井壁电阻率展开图失败：" + ex.getMessage());
+            error("打开电成像响应模拟失败：" + ex.getMessage());
         }
     }
 
@@ -236,6 +242,7 @@ public final class MainController {
         chart.setOnInterfaceSelected(parameterPane::revealInterface);
         chart.setOnLayerSelected(parameterPane::revealLayer);
         wallFitPane = installChart(chart, wallChartBox, null);
+        publishWallChart(new WallChartState.Snapshot(model, chart.pointA(), chart.pointB()));
 
         statusWall.setText(String.format(Locale.ROOT,
                 "展开 %.2f – %.2f m · 彩色", interval.start(), interval.end()));
@@ -379,7 +386,15 @@ public final class MainController {
     private void showWallChartHint() {
         showHint(wallChartBox, wallChartHint);
         wallFitPane = null;
+        publishWallChart(null);
         statusWall.setText("展开 A/B —");
+    }
+
+    private void publishWallChart(WallChartState.Snapshot snapshot) {
+        wallSnapshot = snapshot;
+        if (appRoot.getScene() != null) {
+            WallChartState.in(appRoot.getScene()).set(snapshot);
+        }
     }
 
     private static void showHint(StackPane box, Label hint) {

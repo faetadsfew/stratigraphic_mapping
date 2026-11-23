@@ -61,7 +61,7 @@ public class StratigraphicMappingApplication extends Application {
         });
 
         stage.setScene(scene);
-        stage.setTitle("井壁地层剖面图");
+        stage.setTitle("地层剖面与井壁展开图");
         stage.setFullScreenExitHint("按 Esc 退出全屏");
 
         // 最小尺寸不能超过屏幕放得下的尺寸，否则小屏上窗口会被顶出可视区

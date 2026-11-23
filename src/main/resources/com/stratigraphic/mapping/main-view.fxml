@@ -23,8 +23,8 @@
     <top>
         <HBox styleClass="app-toolbar" alignment="CENTER_LEFT" spacing="8">
             <children>
-                <Button styleClass="tool-button, active" text="地层剖面与井壁展开"/>
-                <Button styleClass="tool-button" text="井壁电阻率展开图"
+                <Button styleClass="tool-button, active" text="地层剖面与井壁展开图"/>
+                <Button styleClass="tool-button" text="电成像响应模拟"
                         onAction="#openWallResistivityView"/>
 
                 <Region HBox.hgrow="ALWAYS"/>
@@ -55,7 +55,7 @@
                 <!-- 左侧：统一参数和两个展开点 -->
                 <VBox fx:id="parameterSlot" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
 
-                <!-- 右侧左一：三维图（预留，暂不绘制内容） -->
+                <!-- 右侧左一：三维地层图 -->
                 <VBox fx:id="threeDChartSlot" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
 
                 <!-- 右侧中列：彩色地层剖面 -->

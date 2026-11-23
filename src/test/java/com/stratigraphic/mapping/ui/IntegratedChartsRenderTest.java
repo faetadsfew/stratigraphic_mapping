@@ -8,8 +8,10 @@ import com.stratigraphic.mapping.reader.StratumModelReader;
 import javafx.application.Platform;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.fxml.FXMLLoader;
+import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.TitledPane;
 import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
@@ -28,6 +30,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class IntegratedChartsRenderTest {
@@ -89,6 +93,32 @@ class IntegratedChartsRenderTest {
                 assertTrue(centerColored > 5_000, "中间彩色剖面没有正常渲染");
                 assertTrue(rightColored > 5_000, "右侧井壁展开图没有正常上色");
                 assertTrue(rightLines > 500, "右侧井壁展开图没有正常渲染");
+
+                Node threeDChart = root.lookup(".three-d-chart");
+                assertNotNull(threeDChart, "首页应包含已生成的三维图");
+                Button simulationButton = root.lookupAll(".tool-button").stream()
+                        .filter(node -> node instanceof Button button
+                                && "电成像响应模拟".equals(button.getText()))
+                        .map(node -> (Button) node).findFirst().orElseThrow();
+                simulationButton.fire();
+                Parent simulationRoot = scene.getRoot();
+                assertNotSame(root, simulationRoot);
+                assertTrue(simulationRoot.getStyleClass().contains("imaging-page"));
+                simulationRoot.applyCss();
+                simulationRoot.layout();
+                assertNotNull(simulationRoot.lookup("#imagingStep2"), "应保留本地模拟计算流程");
+                Button backButton = simulationRoot.lookupAll(".tool-button").stream()
+                        .filter(node -> node instanceof Button button
+                                && "地层剖面与井壁展开图".equals(button.getText()))
+                        .map(node -> (Button) node).findFirst().orElseThrow();
+                backButton.fire();
+                assertSame(root, scene.getRoot(), "返回首页不应重建页面");
+                assertSame(threeDChart, root.lookup(".three-d-chart"), "页面切换应保留三维图");
+                assertEquals(model.resistivities(), parameterPane.toModel().resistivities());
+                assertEquals(model.fractures(), parameterPane.toModel().fractures());
+                simulationButton.fire();
+                assertSame(simulationRoot, scene.getRoot(), "再次进入模拟页应保留页面状态");
+                backButton.fire();
             } catch (Throwable throwable) {
                 failure.set(throwable);
             } finally {

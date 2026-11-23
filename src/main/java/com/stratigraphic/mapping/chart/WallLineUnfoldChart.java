@@ -18,9 +18,13 @@ import javafx.scene.shape.MoveTo;
 import javafx.scene.shape.Path;
 import javafx.scene.shape.Polygon;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.shape.Shape;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.scene.text.Text;
 import javafx.scene.text.TextAlignment;
+import javafx.scene.transform.Rotate;
+import javafx.scene.transform.Translate;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,6 +40,10 @@ import java.util.function.IntConsumer;
  * 每条地层界面在展开图上显示为一条正弦状曲线。
  */
 public final class WallLineUnfoldChart extends Pane {
+
+    public record Sample(double depth, double angleDeg, double resistivity) { }
+
+    private record ResistivityPatch(Shape shape, double resistivity) { }
 
     static final double MARGIN_LEFT = 78;
     static final double MARGIN_TOP = 42;
@@ -56,6 +64,7 @@ public final class WallLineUnfoldChart extends Pane {
     private final double zTop;
     private final double zBottom;
     private final Canvas canvas = new Canvas(chartWidth(), chartHeight());
+    private final List<ResistivityPatch> resistivityPatches = new ArrayList<>();
     private IntConsumer onFractureSelected = index -> {
     };
     private IntConsumer onInterfaceSelected = index -> {
@@ -70,6 +79,10 @@ public final class WallLineUnfoldChart extends Pane {
     };
 
     public WallLineUnfoldChart(StratumModel model, double pointA, double pointB) {
+        this(model, pointA, pointB, true);
+    }
+
+    WallLineUnfoldChart(StratumModel model, double pointA, double pointB, boolean showLegend) {
 
         if (!Double.isFinite(pointA) || !Double.isFinite(pointB)) {
             throw new IllegalArgumentException("展开点 A、B 必须是有效数字");
@@ -93,7 +106,9 @@ public final class WallLineUnfoldChart extends Pane {
         draw();
         addWedgeFractures();
         addSphereFractures();
-        addFractureLegend();
+        if (showLegend) {
+            addFractureLegend();
+        }
         setOnMouseClicked(this::handleClick);
     }
 
@@ -257,6 +272,7 @@ public final class WallLineUnfoldChart extends Pane {
             gc.setStroke(resistivityScale.colorOf(fracture.resistivity()));
             gc.setLineWidth(4.6);
             strokeFracture(gc, fracture);
+            resistivityPatches.add(new ResistivityPatch(fracturePath(fracture), fracture.resistivity()));
         }
 
         gc.restore();
@@ -287,7 +303,8 @@ public final class WallLineUnfoldChart extends Pane {
             double widthLimited = width * 0.24 / Math.max(1, count);
             double fontSize = Math.max(5, Math.min(36,
                     Math.min(heightLimited, widthLimited)));
-            gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, fontSize));
+            Font textFont = Font.font("Microsoft YaHei UI", FontWeight.BOLD, fontSize);
+            gc.setFont(textFont);
             gc.setTextAlign(TextAlignment.CENTER);
             gc.setTextBaseline(VPos.CENTER);
 
@@ -303,6 +320,14 @@ public final class WallLineUnfoldChart extends Pane {
                 gc.setFill(color);
                 gc.fillText(String.valueOf(content.charAt(i)), 0, 0);
                 gc.restore();
+                Text glyph = new Text(String.valueOf(content.charAt(i)));
+                glyph.setFont(textFont);
+                glyph.setTextOrigin(VPos.CENTER);
+                glyph.setX(-glyph.getLayoutBounds().getWidth() / 2);
+                glyph.getTransforms().addAll(new Translate(x, centerY - arch), new Rotate(rotation));
+                Shape outline = Shape.union(glyph, glyph);
+                outline.setStroke(null);
+                resistivityPatches.add(new ResistivityPatch(outline, text.resistivity()));
             }
             gc.restore();
         }
@@ -363,6 +388,47 @@ public final class WallLineUnfoldChart extends Pane {
         return result < 0 ? result + 360 : result;
     }
 
+    private Path fracturePath(Fracture fracture) {
+        Path path = new Path();
+        path.setFill(null);
+        path.setStroke(Color.BLACK);
+        path.setStrokeWidth(4.6);
+        if (Math.abs(FractureGeometry.normalZ(fracture)) < 1e-9) {
+            double direction = Math.toDegrees(Math.atan2(
+                    FractureGeometry.normalY(fracture), FractureGeometry.normalX(fracture)));
+            for (double offset : new double[]{90, 270}) {
+                double position = angleToX(normalizeAngle(direction + offset));
+                path.getElements().addAll(new MoveTo(position, MARGIN_TOP),
+                        new LineTo(position, MARGIN_TOP + PLOT_HEIGHT));
+            }
+        } else {
+            for (int step = 0; step <= TRACE_STEPS; step++) {
+                double angle = 360.0 * step / TRACE_STEPS;
+                double position = angleToX(angle);
+                double depth = zToY(FractureGeometry.traceDepth(fracture, model.wellRadius(), angle));
+                path.getElements().add(step == 0 ? new MoveTo(position, depth) : new LineTo(position, depth));
+            }
+        }
+        return path;
+    }
+
+    public Sample sampleAt(double x, double y) {
+        if (!Double.isFinite(x) || !Double.isFinite(y)
+                || x < MARGIN_LEFT || x > MARGIN_LEFT + PLOT_WIDTH
+                || y < MARGIN_TOP || y > MARGIN_TOP + PLOT_HEIGHT) {
+            return null;
+        }
+        double angle = xToAngle(x);
+        double depth = yToZ(y);
+        for (int index = resistivityPatches.size() - 1; index >= 0; index--) {
+            ResistivityPatch patch = resistivityPatches.get(index);
+            if (patch.shape().contains(patch.shape().parentToLocal(x, y))) {
+                return new Sample(depth, angle, patch.resistivity());
+            }
+        }
+        return new Sample(depth, angle, model.resistivityOf(layerAt(angle, depth)));
+    }
+
     /** 在井壁展开图上绘制楔形体填充三角形。 */
     private void addWedgeFractures() {
 
@@ -396,6 +462,7 @@ public final class WallLineUnfoldChart extends Pane {
                 polygon.setMouseTransparent(true);
                 polygon.getStyleClass().add("wedge-fracture");
                 wedgeGroup.getChildren().add(polygon);
+                resistivityPatches.add(new ResistivityPatch(polygon, wedge.resistivity()));
             }
         }
         getChildren().add(wedgeGroup);
@@ -449,7 +516,9 @@ public final class WallLineUnfoldChart extends Pane {
 
             Color color = resistivityScale.colorOf(sphere.resistivity());
             for (double shift : WRAP_SHIFTS) {
-                sphereGroup.getChildren().add(spherePath(trace, shift, color));
+                Path path = spherePath(trace, shift, color);
+                sphereGroup.getChildren().add(path);
+                resistivityPatches.add(new ResistivityPatch(path, sphere.resistivity()));
             }
         }
         getChildren().add(sphereGroup);
