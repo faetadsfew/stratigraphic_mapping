@@ -1,5 +1,6 @@
 package com.stratigraphic.mapping.reader;
 
+import com.stratigraphic.mapping.model.CubeAnomaly;
 import com.stratigraphic.mapping.model.Fracture;
 import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
@@ -236,6 +237,7 @@ public final class StratumModelReader {
         List<SphereFracture> sphereFractures = new ArrayList<>();
         List<WedgeFracture> wedgeFractures = new ArrayList<>();
         List<SurfaceText> surfaceTexts = new ArrayList<>();
+        List<CubeAnomaly> cubeAnomalies = new ArrayList<>();
 
         for (int i = 0; i < lines.size(); i++) {
 
@@ -273,6 +275,9 @@ public final class StratumModelReader {
                 }
             } else if (header.contains("球体") && header.contains("=====")) {
                 sphereFractures = parseSphereSection(lines, i + 1);
+            } else if ((header.contains("正方体") || header.contains("立方体"))
+                    && header.contains("=====")) {
+                cubeAnomalies = parseCubeSection(lines, i + 1);
             } else if (header.contains("楔形体个数")) {
                 wedgeFractures = parseWedgeSection(lines, i);
             } else if (header.contains("楔形") && header.contains("=====")) {
@@ -309,7 +314,33 @@ public final class StratumModelReader {
 
         return new StratumModel(wellRadius, wellResistivity, dipAngle,
                 interfaces, resistivities, fractures, sphereFractures, wedgeFractures,
-                surfaceTexts);
+                surfaceTexts, cubeAnomalies);
+    }
+
+    private static List<CubeAnomaly> parseCubeSection(List<String> lines, int start) {
+
+        List<double[]> rows = numericRowsAfter(lines, start);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+
+        int count = parseInteger(rows.get(0)[0], start, "正方体个数");
+        if (rows.size() - 1 != count) {
+            throw new IllegalArgumentException(
+                    "formation_G 文件写的正方体个数为 " + count
+                            + "，实际列出 " + (rows.size() - 1) + " 个正方体");
+        }
+
+        List<CubeAnomaly> cubes = new ArrayList<>(count);
+        for (int i = 1; i < rows.size(); i++) {
+            double[] row = rows.get(i);
+            if (row.length < 5) {
+                throw new IllegalArgumentException(
+                        "正方体行需要「中心深度 方位角 距井轴水平距离 棱长 电阻率」五个数");
+            }
+            cubes.add(new CubeAnomaly(row[0], row[1], row[2], row[3], row[4]));
+        }
+        return cubes;
     }
 
     private static List<SphereFracture> parseSphereSection(List<String> lines, int start) {

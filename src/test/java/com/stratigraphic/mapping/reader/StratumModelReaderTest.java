@@ -69,8 +69,14 @@ class StratumModelReaderTest {
             assertEquals(90, model.sphereFractures().get(0).azimuthDeg(), 1e-12);
             assertEquals(0.15, model.sphereFractures().get(0).distanceFromAxis(), 1e-12);
             assertEquals(0.08, model.sphereFractures().get(0).radius(), 1e-12);
-            assertEquals(500, model.sphereFractures().get(0).resistivity(), 1e-12);
-            assertEquals(500, model.maxResistivity(), 1e-12);
+            assertEquals(50, model.sphereFractures().get(0).resistivity(), 1e-12);
+            assertEquals(1, model.cubeAnomalies().size());
+            assertEquals(5.45, model.cubeAnomalies().get(0).centerDepth(), 1e-12);
+            assertEquals(210, model.cubeAnomalies().get(0).azimuthDeg(), 1e-12);
+            assertEquals(0.16, model.cubeAnomalies().get(0).distanceFromAxis(), 1e-12);
+            assertEquals(0.14, model.cubeAnomalies().get(0).sideLength(), 1e-12);
+            assertEquals(70, model.cubeAnomalies().get(0).resistivity(), 1e-12);
+            assertEquals(100, model.maxResistivity(), 1e-12);
             assertEquals(100, model.maxSectionResistivity(), 1e-12);
             assertEquals(1, model.wedgeFractures().size());
             assertEquals(120, model.wedgeFractures().get(0).vertexAzimuthDeg(), 1e-12);
@@ -84,6 +90,12 @@ class StratumModelReaderTest {
             assertEquals(3, model.surfaceTexts().get(0).resistivity(), 1e-12);
             assertEquals(10, model.minResistivity(), 1e-12,
                     "曲面文字电阻率不应改变三维/井壁图的统一色标范围");
+            assertEquals(1, model.dielectricConstant(), 1e-12);
+            assertEquals(1, model.fractures().get(0).dielectricConstant(), 1e-12);
+            assertEquals(1, model.sphereFractures().get(0).dielectricConstant(), 1e-12);
+            assertEquals(1, model.cubeAnomalies().get(0).dielectricConstant(), 1e-12);
+            assertEquals(1, model.wedgeFractures().get(0).dielectricConstant(), 1e-12);
+            assertEquals(1, model.surfaceTexts().get(0).dielectricConstant(), 1e-12);
         }
     }
 

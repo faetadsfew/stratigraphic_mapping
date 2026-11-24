@@ -1,5 +1,7 @@
 package com.stratigraphic.mapping.ui;
 
+import com.stratigraphic.mapping.model.CubeAnomaly;
+import com.stratigraphic.mapping.model.DielectricConstant;
 import com.stratigraphic.mapping.model.Fracture;
 import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
@@ -41,6 +43,7 @@ import java.util.List;
  *   <li>井数据：井眼半径、井眼电阻率；</li>
  *   <li>地层数据：界面个数 n、统一倾角、n 个界面深度、n+1 层层电阻率；</li>
  *   <li>裂缝数据：交点深度、法向仰角、法向方位角和裂缝电阻率 R1；</li>
+ *   <li>异常体数据：球形异常体、正方体异常体和楔形体异常体；</li>
  *   <li>井壁展开：两个展开点的深度位置。</li>
  * </ul>
  *
@@ -59,6 +62,7 @@ public final class ParameterPane extends BorderPane {
     private final TextField dipAngleField = new TextField();
     private final TextField radiusField = new TextField();
     private final TextField wellRhoField = new TextField();
+    private final TextField wellDielectricField = new TextField();
 
     private final TextField unfoldPointAField = new TextField();
     private final TextField unfoldPointBField = new TextField();
@@ -67,6 +71,7 @@ public final class ParameterPane extends BorderPane {
     private final GridPane layerGrid = new GridPane();
     private final VBox fractureRowsBox = new VBox(8);
     private final VBox sphereRowsBox = new VBox(8);
+    private final VBox cubeRowsBox = new VBox(8);
     private final VBox wedgeRowsBox = new VBox(8);
     private final VBox textRowsBox = new VBox(8);
 
@@ -74,10 +79,12 @@ public final class ParameterPane extends BorderPane {
     private Accordion formAccordion;
     private TitledPane formationSection;
     private TitledPane fractureSection;
+    private TitledPane anomalySection;
     private TitledPane textSection;
     private TextField selectedFormationField;
     private FractureRow selectedFractureRow;
     private SphereRow selectedSphereRow;
+    private CubeRow selectedCubeRow;
     private WedgeRow selectedWedgeRow;
     private TextRow selectedTextRow;
     private final PauseTransition selectionScrollDelay =
@@ -88,8 +95,10 @@ public final class ParameterPane extends BorderPane {
 
     private final List<TextField> depthFields = new ArrayList<>();
     private final List<TextField> rhoFields = new ArrayList<>();
+    private final List<TextField> dielectricFields = new ArrayList<>();
     private final List<FractureRow> fractureRows = new ArrayList<>();
     private final List<SphereRow> sphereRows = new ArrayList<>();
+    private final List<CubeRow> cubeRows = new ArrayList<>();
     private final List<WedgeRow> wedgeRows = new ArrayList<>();
     private final List<TextRow> textRows = new ArrayList<>();
 
@@ -122,6 +131,7 @@ public final class ParameterPane extends BorderPane {
         dipAngleField.setText(plain(model.dipAngle()));
         radiusField.setText(plain(model.wellRadius()));
         wellRhoField.setText(plain(model.wellResistivity()));
+        wellDielectricField.setText(plain(model.dielectricConstant()));
 
         List<String> depths = new ArrayList<>();
         for (StratumInterface s : model.interfaces()) {
@@ -133,11 +143,17 @@ public final class ParameterPane extends BorderPane {
             rhos.add(plain(rho));
         }
 
+        List<String> dielectricConstants = new ArrayList<>();
+        for (double epsilon : model.layerDielectricConstants()) {
+            dielectricConstants.add(plain(epsilon));
+        }
+
         unfoldPointAField.setText(plain(round(model.minDepth() - 0.1)));
         unfoldPointBField.setText(plain(round(model.maxDepth() + 0.1)));
-        rebuildRows(model.interfaceCount(), depths, rhos);
+        rebuildRows(model.interfaceCount(), depths, rhos, dielectricConstants);
         rebuildFractureRows(model.fractures());
         rebuildSphereRows(model.sphereFractures());
+        rebuildCubeRows(model.cubeAnomalies());
         rebuildWedgeRows(model.wedgeFractures());
         rebuildTextRows(model.surfaceTexts());
     }
@@ -149,11 +165,14 @@ public final class ParameterPane extends BorderPane {
 
         // n 改过但还没同步时，先把两张表的行数对齐
         if (count != depthFields.size()) {
-            rebuildRows(count, currentTexts(depthFields), currentTexts(rhoFields));
+            rebuildRows(count, currentTexts(depthFields), currentTexts(rhoFields),
+                    currentTexts(dielectricFields));
         }
 
         double radius = readNumber(radiusField.getText(), "井眼半径");
         double wellRho = readNumber(wellRhoField.getText(), "井眼电阻率");
+        double wellDielectric = readPositiveNumber(
+                wellDielectricField.getText(), "井眼介电常数 εr");
         double dipAngle = readNumber(dipAngleField.getText(), "统一倾角");
 
         List<StratumInterface> interfaces = new ArrayList<>();
@@ -168,9 +187,17 @@ public final class ParameterPane extends BorderPane {
             resistivities.add(readNumber(rhoFields.get(i).getText(), "第 " + (i + 1) + " 层电阻率"));
         }
 
-        return new StratumModel(radius, wellRho, dipAngle,
-                interfaces, resistivities, readFractures(), readSphereFractures(),
-                readWedgeFractures(), readTexts());
+        List<Double> layerDielectricConstants = new ArrayList<>();
+        for (int i = 0; i < dielectricFields.size(); i++) {
+            layerDielectricConstants.add(readPositiveNumber(
+                    dielectricFields.get(i).getText(),
+                    "第 " + (i + 1) + " 层介电常数 εr"));
+        }
+
+        return new StratumModel(radius, wellRho, wellDielectric, dipAngle,
+                interfaces, resistivities, layerDielectricConstants,
+                readFractures(), readSphereFractures(),
+                readWedgeFractures(), readTexts(), readCubeAnomalies());
     }
 
     /**
@@ -221,6 +248,7 @@ public final class ParameterPane extends BorderPane {
     public void revealFracture(int visibleIndex) {
 
         clearSphereSelection();
+        clearCubeSelection();
         clearWedgeSelection();
         clearTextSelection();
         if (selectedFormationField != null) {
@@ -241,10 +269,11 @@ public final class ParameterPane extends BorderPane {
         scrollToNode(row.card);
     }
 
-    /** 从井壁展开图选中球体裂缝时，展开并高亮球体参数卡。 */
+    /** 从井壁展开图选中球形异常体时，展开并高亮对应参数卡。 */
     public void revealSphere(int sphereIndex) {
 
         SphereRow row = sphereRowAt(sphereIndex);
+        clearCubeSelection();
         clearWedgeSelection();
         clearTextSelection();
         if (selectedFormationField != null) {
@@ -259,18 +288,46 @@ public final class ParameterPane extends BorderPane {
         if (row == null) {
             return;
         }
-        if (formAccordion != null && fractureSection != null) {
-            fractureSection.setExpanded(true);
-            formAccordion.setExpandedPane(fractureSection);
+        if (formAccordion != null && anomalySection != null) {
+            anomalySection.setExpanded(true);
+            formAccordion.setExpandedPane(anomalySection);
         }
         row.depthField.requestFocus();
         scrollToNode(row.card);
     }
 
-    /** 从井壁展开图选中楔形体裂缝时，展开并高亮对应参数卡。 */
+    /** 从三维图/井壁展开图选中正方体异常体时，展开并高亮对应参数卡。 */
+    public void revealCube(int cubeIndex) {
+
+        CubeRow row = cubeRowAt(cubeIndex);
+        clearSphereSelection();
+        clearWedgeSelection();
+        clearTextSelection();
+        if (selectedFormationField != null) {
+            selectedFormationField.getStyleClass().remove("parameter-highlight");
+            selectedFormationField = null;
+        }
+        if (selectedFractureRow != null) {
+            selectedFractureRow.card.getStyleClass().remove("fracture-card-selected");
+            selectedFractureRow = null;
+        }
+        selectCubeRow(row);
+        if (row == null) {
+            return;
+        }
+        if (formAccordion != null && anomalySection != null) {
+            anomalySection.setExpanded(true);
+            formAccordion.setExpandedPane(anomalySection);
+        }
+        row.depthField.requestFocus();
+        scrollToNode(row.card);
+    }
+
+    /** 从井壁展开图选中楔形体异常体时，展开并高亮对应参数卡。 */
     public void revealWedge(int wedgeIndex) {
 
         clearSphereSelection();
+        clearCubeSelection();
         clearTextSelection();
         if (selectedFormationField != null) {
             selectedFormationField.getStyleClass().remove("parameter-highlight");
@@ -286,9 +343,9 @@ public final class ParameterPane extends BorderPane {
         if (row == null) {
             return;
         }
-        if (formAccordion != null && fractureSection != null) {
-            fractureSection.setExpanded(true);
-            formAccordion.setExpandedPane(fractureSection);
+        if (formAccordion != null && anomalySection != null) {
+            anomalySection.setExpanded(true);
+            formAccordion.setExpandedPane(anomalySection);
         }
         row.vertexAzimuthField.requestFocus();
         scrollToNode(row.card);
@@ -298,6 +355,7 @@ public final class ParameterPane extends BorderPane {
     public void revealText(int textIndex) {
 
         clearSphereSelection();
+        clearCubeSelection();
         clearWedgeSelection();
         if (selectedFormationField != null) {
             selectedFormationField.getStyleClass().remove("parameter-highlight");
@@ -342,6 +400,7 @@ public final class ParameterPane extends BorderPane {
     private void revealFormationField(TextField field) {
 
         clearSphereSelection();
+        clearCubeSelection();
         clearWedgeSelection();
         clearTextSelection();
         if (selectedFractureRow != null) {
@@ -438,8 +497,10 @@ public final class ParameterPane extends BorderPane {
         wellGrid.add(radiusField, 1, 0);
         wellGrid.add(caption("井眼电阻率 / Ω·m"), 0, 1);
         wellGrid.add(wellRhoField, 1, 1);
+        wellGrid.add(caption("介电常数 εr"), 0, 2);
+        wellGrid.add(wellDielectricField, 1, 2);
 
-        for (TextField field : new TextField[]{radiusField, wellRhoField}) {
+        for (TextField field : new TextField[]{radiusField, wellRhoField, wellDielectricField}) {
             field.setPrefWidth(120);
             field.getStyleClass().add("form-input");
             restrictToNumber(field);
@@ -505,11 +566,13 @@ public final class ParameterPane extends BorderPane {
         formationSection.getStyleClass().add("titled-pane");
 
         fractureSection = buildFractureSection();
+        anomalySection = buildAnomalySection();
         textSection = buildTextSection();
         TitledPane wallSection = buildUnfoldSection();
 
         Accordion accordion = new Accordion(
-                wellSection, formationSection, fractureSection, textSection, wallSection);
+                wellSection, formationSection, fractureSection, anomalySection,
+                textSection, wallSection);
         formAccordion = accordion;
         // 展开的分组必须按内容高度撑开，再由外层 ScrollPane 负责滚动，不能被视口压扁裁切。
         accordion.setMinHeight(Region.USE_PREF_SIZE);
@@ -518,6 +581,7 @@ public final class ParameterPane extends BorderPane {
         wellSection.setExpanded(false);
         formationSection.setExpanded(false);
         fractureSection.setExpanded(false);
+        anomalySection.setExpanded(false);
         textSection.setExpanded(false);
         wallSection.setExpanded(false);
         accordion.setExpandedPane(null);
@@ -567,10 +631,7 @@ public final class ParameterPane extends BorderPane {
         HBox actions = new HBox(6, addButton, removeButton);
         actions.setAlignment(Pos.CENTER_LEFT);
 
-        VBox sphereSection = buildSphereSection();
-        VBox wedgeSection = buildWedgeSection();
-        VBox content = new VBox(8, hint, actions, fractureRowsBox,
-                new Separator(), sphereSection, new Separator(), wedgeSection);
+        VBox content = new VBox(8, hint, actions, fractureRowsBox);
         TitledPane pane = new TitledPane("裂缝", content);
         pane.getStyleClass().add("titled-pane");
 
@@ -580,28 +641,47 @@ public final class ParameterPane extends BorderPane {
         return pane;
     }
 
-    /** 裂缝框下方的球体裂缝输入区，可添加多条。 */
-    private VBox buildSphereSection() {
+    /** 独立的异常体参数分组，包含球形、正方体和楔形体异常体。 */
+    private TitledPane buildAnomalySection() {
 
-        Label title = new Label("球体裂缝（圆形）");
-        title.getStyleClass().add("section-title");
-
-        Label hint = new Label("对应 formation_G 第 4 节，每条球体均绘制在井壁展开图。");
+        Label hint = new Label(
+                "对应 formation_G 第 4、5、6 节，分别录入球形、正方体和楔形体异常体；"
+                        + "三者均绘制在三维图和井壁展开图中。");
         hint.getStyleClass().add("hint");
         hint.setWrapText(true);
         hint.setMaxWidth(Double.MAX_VALUE);
 
-        Button addButton = smallButton("＋ 添加球体");
+        VBox content = new VBox(8, hint,
+                buildSphereSection(), new Separator(), buildCubeSection(),
+                new Separator(), buildWedgeSection());
+        TitledPane pane = new TitledPane("异常体", content);
+        pane.getStyleClass().add("titled-pane");
+        return pane;
+    }
+
+    /** 异常体分组中的球形异常体输入区，可添加多条。 */
+    private VBox buildSphereSection() {
+
+        Label title = new Label("球形异常体（圆形）");
+        title.getStyleClass().add("section-title");
+
+        Label hint = new Label(
+                "对应 formation_G 第 4 节，每条球体同时绘制在三维图和井壁展开图。");
+        hint.getStyleClass().add("hint");
+        hint.setWrapText(true);
+        hint.setMaxWidth(Double.MAX_VALUE);
+
+        Button addButton = smallButton("＋ 添加球形异常体");
         addButton.setOnAction(e -> {
             if (sphereRows.size() >= 20) {
-                showError("球体裂缝最多 20 条");
+                showError("球形异常体最多 20 个");
                 return;
             }
             addSphereRow(null);
             onDataChanged.run();
         });
 
-        Button removeButton = smallButton("－ 删除最后一个球体");
+        Button removeButton = smallButton("－ 删除最后一个球形异常体");
         removeButton.setOnAction(e -> {
             if (!sphereRows.isEmpty()) {
                 removeSphereRow(sphereRows.get(sphereRows.size() - 1));
@@ -660,7 +740,7 @@ public final class ParameterPane extends BorderPane {
 
     private void renumberSphereRows() {
         for (int i = 0; i < sphereRows.size(); i++) {
-            sphereRows.get(i).title.setText("球体裂缝 " + (i + 1));
+            sphereRows.get(i).title.setText("球形异常体 " + (i + 1));
         }
     }
 
@@ -699,30 +779,151 @@ public final class ParameterPane extends BorderPane {
         }
     }
 
-    /** 球体裂缝下方的楔形体裂缝输入区。 */
-    private VBox buildWedgeSection() {
+    /** 异常体分组中的正方体异常体输入区。 */
+    private VBox buildCubeSection() {
 
-        Label title = new Label("楔形体裂缝（三角）");
+        Label title = new Label("正方体异常体");
         title.getStyleClass().add("section-title");
 
         Label hint = new Label(
-                "对应 formation_G 第 5 节，7 个数依次为顶点方位角/深度、"
-                        + "左底方位角/深度、右底方位角/深度、电阻率；只绘制在井壁展开图。");
+                "对应 formation_G 第 5 节，5 个数依次为：中心深度、方位角、"
+                        + "距井轴水平距离、棱长、电阻率；同时绘制在三维图和井壁展开图。");
         hint.getStyleClass().add("hint");
         hint.setWrapText(true);
         hint.setMaxWidth(Double.MAX_VALUE);
 
-        Button addButton = smallButton("＋ 添加楔形体");
+        Button addButton = smallButton("＋ 添加正方体异常体");
+        addButton.setOnAction(e -> {
+            if (cubeRows.size() >= 20) {
+                showError("正方体异常体最多 20 个");
+                return;
+            }
+            addCubeRow(null);
+            onDataChanged.run();
+        });
+
+        Button removeButton = smallButton("－ 删除最后一个正方体异常体");
+        removeButton.setOnAction(e -> {
+            if (!cubeRows.isEmpty()) {
+                removeCubeRow(cubeRows.get(cubeRows.size() - 1));
+            }
+        });
+
+        HBox actions = new HBox(6, addButton, removeButton);
+        actions.setAlignment(Pos.CENTER_LEFT);
+
+        return new VBox(8, title, hint, actions, cubeRowsBox);
+    }
+
+    private void rebuildCubeRows(List<CubeAnomaly> cubes) {
+
+        cubeRows.clear();
+        cubeRowsBox.getChildren().clear();
+        selectedCubeRow = null;
+
+        for (CubeAnomaly cube : cubes) {
+            addCubeRow(cube);
+        }
+        renumberCubeRows();
+    }
+
+    private List<CubeAnomaly> readCubeAnomalies() {
+
+        List<CubeAnomaly> cubes = new ArrayList<>();
+        for (int i = 0; i < cubeRows.size(); i++) {
+            CubeAnomaly cube = cubeRows.get(i).toCube(i + 1);
+            if (cube != null) {
+                cubes.add(cube);
+            }
+        }
+        return cubes;
+    }
+
+    private void addCubeRow(CubeAnomaly cube) {
+
+        CubeRow row = new CubeRow(cube);
+        row.deleteButton.setOnAction(e -> removeCubeRow(row));
+        cubeRows.add(row);
+        cubeRowsBox.getChildren().add(row.card);
+        renumberCubeRows();
+    }
+
+    private void removeCubeRow(CubeRow row) {
+
+        cubeRows.remove(row);
+        cubeRowsBox.getChildren().remove(row.card);
+        if (selectedCubeRow == row) {
+            selectedCubeRow = null;
+        }
+        renumberCubeRows();
+        onDataChanged.run();
+    }
+
+    private void renumberCubeRows() {
+        for (int i = 0; i < cubeRows.size(); i++) {
+            cubeRows.get(i).title.setText("正方体异常体 " + (i + 1));
+        }
+    }
+
+    private CubeRow cubeRowAt(int visibleIndex) {
+
+        if (visibleIndex < 0) {
+            return null;
+        }
+        int current = 0;
+        for (CubeRow row : cubeRows) {
+            if (row.allBlank()) {
+                continue;
+            }
+            if (current == visibleIndex) {
+                return row;
+            }
+            current++;
+        }
+        return null;
+    }
+
+    private void selectCubeRow(CubeRow selected) {
+
+        clearCubeSelection();
+        selectedCubeRow = selected;
+        if (selected != null
+                && !selected.card.getStyleClass().contains("fracture-card-selected")) {
+            selected.card.getStyleClass().add("fracture-card-selected");
+        }
+    }
+
+    private void clearCubeSelection() {
+        if (selectedCubeRow != null) {
+            selectedCubeRow.card.getStyleClass().remove("fracture-card-selected");
+            selectedCubeRow = null;
+        }
+    }
+
+    /** 异常体分组中的楔形体异常体输入区。 */
+    private VBox buildWedgeSection() {
+
+        Label title = new Label("楔形体异常体（三角）");
+        title.getStyleClass().add("section-title");
+
+        Label hint = new Label(
+                "对应 formation_G 第 6 节，7 个数依次为顶点方位角/深度、"
+                        + "左底方位角/深度、右底方位角/深度、电阻率；同时绘制在三维图和井壁展开图。");
+        hint.getStyleClass().add("hint");
+        hint.setWrapText(true);
+        hint.setMaxWidth(Double.MAX_VALUE);
+
+        Button addButton = smallButton("＋ 添加楔形体异常体");
         addButton.setOnAction(e -> {
             if (wedgeRows.size() >= 20) {
-                showError("楔形体裂缝最多 20 条");
+                showError("楔形体异常体最多 20 个");
                 return;
             }
             addWedgeRow(null);
             onDataChanged.run();
         });
 
-        Button removeButton = smallButton("－ 删除最后一个楔形体");
+        Button removeButton = smallButton("－ 删除最后一个楔形体异常体");
         removeButton.setOnAction(e -> {
             if (!wedgeRows.isEmpty()) {
                 removeWedgeRow(wedgeRows.get(wedgeRows.size() - 1));
@@ -781,7 +982,7 @@ public final class ParameterPane extends BorderPane {
 
     private void renumberWedgeRows() {
         for (int i = 0; i < wedgeRows.size(); i++) {
-            wedgeRows.get(i).title.setText("楔形体裂缝 " + (i + 1));
+            wedgeRows.get(i).title.setText("楔形体异常体 " + (i + 1));
         }
     }
 
@@ -824,7 +1025,7 @@ public final class ParameterPane extends BorderPane {
     private TitledPane buildTextSection() {
 
         Label hint = new Label(
-                "对应 formation_G 第 6 节：中心方位角、中心深度、横向跨度角度、"
+                "对应 formation_G 第 7 节：中心方位角、中心深度、横向跨度角度、"
                         + "纵向跨度高度、电阻率；可选文字内容写在五个数字之后。");
         hint.getStyleClass().add("hint");
         hint.setWrapText(true);
@@ -1132,7 +1333,8 @@ public final class ParameterPane extends BorderPane {
         }
 
         if (count != depthFields.size()) {
-            rebuildRows(count, currentTexts(depthFields), currentTexts(rhoFields));
+            rebuildRows(count, currentTexts(depthFields), currentTexts(rhoFields),
+                    currentTexts(dielectricFields));
             clearMessage();
         }
 
@@ -1151,6 +1353,7 @@ public final class ParameterPane extends BorderPane {
 
         List<String> depths = currentTexts(depthFields);
         List<String> rhos = currentTexts(rhoFields);
+        List<String> dielectricConstants = currentTexts(dielectricFields);
 
         int count = depths.size();
 
@@ -1161,11 +1364,14 @@ public final class ParameterPane extends BorderPane {
 
         // 新界面默认接在最后一条下面 0.2 m
         depths.add(plain(round(lastNumber(depths, 1.0) + 0.2)));
-        // 新层默认沿用最深那层的电阻率
+        // 新层默认沿用最深那层的电阻率和介电常数
         rhos.add(rhos.isEmpty() ? "10" : rhos.get(rhos.size() - 1));
+        dielectricConstants.add(dielectricConstants.isEmpty()
+                ? plain(DielectricConstant.VALUE)
+                : dielectricConstants.get(dielectricConstants.size() - 1));
 
         countField.setText(String.valueOf(count + 1));
-        rebuildRows(count + 1, depths, rhos);
+        rebuildRows(count + 1, depths, rhos, dielectricConstants);
         clearMessage();
         onDataChanged.run();
     }
@@ -1182,14 +1388,18 @@ public final class ParameterPane extends BorderPane {
 
         List<String> depths = currentTexts(depthFields);
         List<String> rhos = currentTexts(rhoFields);
+        List<String> dielectricConstants = currentTexts(dielectricFields);
 
         depths.remove(count - 1);
         if (!rhos.isEmpty()) {
             rhos.remove(rhos.size() - 1);
         }
+        if (!dielectricConstants.isEmpty()) {
+            dielectricConstants.remove(dielectricConstants.size() - 1);
+        }
 
         countField.setText(String.valueOf(count - 1));
-        rebuildRows(count - 1, depths, rhos);
+        rebuildRows(count - 1, depths, rhos, dielectricConstants);
         clearMessage();
         onDataChanged.run();
     }
@@ -1211,14 +1421,16 @@ public final class ParameterPane extends BorderPane {
         return Math.round(value * 1e6) / 1e6;
     }
 
-    private void rebuildRows(int count, List<String> depths, List<String> rhos) {
+    private void rebuildRows(int count, List<String> depths, List<String> rhos,
+                             List<String> dielectricConstants) {
 
         depthFields.clear();
         rhoFields.clear();
+        dielectricFields.clear();
         selectedFormationField = null;
 
         rebuildInterfaceGrid(count, depths);
-        rebuildLayerGrid(count, rhos);
+        rebuildLayerGrid(count, rhos, dielectricConstants);
     }
 
     /** 界面表：序号 / 交点深度；倾角由上方统一设置。 */
@@ -1243,25 +1455,31 @@ public final class ParameterPane extends BorderPane {
         }
     }
 
-    /** 电阻率表：层号 / R0，层数恒为 n + 1。 */
-    private void rebuildLayerGrid(int count, List<String> rhos) {
+    /** 电阻率表：层号 / R0 / εr，层数恒为 n + 1。 */
+    private void rebuildLayerGrid(int count, List<String> rhos,
+                                  List<String> dielectricConstants) {
 
         layerGrid.getChildren().clear();
         layerGrid.setHgap(8);
         layerGrid.setVgap(5);
         layerGrid.getColumnConstraints().setAll(
-                column(36, HPos.LEFT), flexColumn(80, HPos.LEFT));
+                column(36, HPos.LEFT), flexColumn(80, HPos.LEFT),
+                column(54, HPos.LEFT));
 
         layerGrid.add(header("层号"), 0, 0);
         layerGrid.add(header("R0 / (Ω·m)"), 1, 0);
+        layerGrid.add(header("εr"), 2, 0);
 
         for (int i = 0; i < count + 1; i++) {
 
             TextField rho = numberField(at(rhos, i), 96);
+            TextField dielectric = numberField(at(dielectricConstants, i), 60);
             rhoFields.add(rho);
+            dielectricFields.add(dielectric);
 
             layerGrid.add(indexLabel(String.valueOf(i + 1)), 0, i + 1);
             layerGrid.add(rho, 1, i + 1);
+            layerGrid.add(dielectric, 2, i + 1);
         }
     }
 
@@ -1307,6 +1525,14 @@ public final class ParameterPane extends BorderPane {
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException(what + "「" + text.trim() + "」不是有效数字");
         }
+    }
+
+    private static double readPositiveNumber(String text, String what) {
+        double value = readNumber(text, what);
+        if (!Double.isFinite(value) || value <= 0) {
+            throw new IllegalArgumentException(what + " 必须是大于 0 的数");
+        }
+        return value;
     }
 
     private static double parseOrNaN(String text) {
@@ -1414,6 +1640,7 @@ public final class ParameterPane extends BorderPane {
         private final TextField elevationField;
         private final TextField azimuthField;
         private final TextField resistivityField;
+        private final TextField dielectricField;
 
         private FractureRow(Fracture fracture) {
 
@@ -1431,6 +1658,9 @@ public final class ParameterPane extends BorderPane {
                     fracture == null ? "" : plain(fracture.normalAzimuthDeg()), 86);
             resistivityField = numberField(
                     fracture == null ? "" : plain(fracture.resistivity()), 86);
+            dielectricField = numberField(fracture == null
+                    ? plain(DielectricConstant.VALUE)
+                    : plain(fracture.dielectricConstant()), 86);
 
             GridPane grid = new GridPane();
             grid.setHgap(7);
@@ -1442,6 +1672,7 @@ public final class ParameterPane extends BorderPane {
             addRow(grid, 1, "法向仰角 / °", elevationField);
             addRow(grid, 2, "法向方位角 / °", azimuthField);
             addRow(grid, 3, "R1 / (Ω·m)", resistivityField);
+            addRow(grid, 4, "介电常数 εr", dielectricField);
 
             card.getStyleClass().add("fracture-card");
             card.getChildren().addAll(header, grid);
@@ -1460,7 +1691,9 @@ public final class ParameterPane extends BorderPane {
                     readNumber(azimuthField.getText(),
                             "第 " + index + " 条裂缝法向方位角"),
                     readNumber(resistivityField.getText(),
-                            "第 " + index + " 条裂缝电阻率 R1"));
+                            "第 " + index + " 条裂缝电阻率 R1"),
+                    readPositiveNumber(dielectricField.getText(),
+                            "第 " + index + " 条裂缝介电常数 εr"));
         }
 
         private boolean allBlank() {
@@ -1482,6 +1715,7 @@ public final class ParameterPane extends BorderPane {
         private final TextField distanceField;
         private final TextField radiusField;
         private final TextField resistivityField;
+        private final TextField dielectricField;
 
         private SphereRow(SphereFracture sphere) {
 
@@ -1501,6 +1735,9 @@ public final class ParameterPane extends BorderPane {
                     sphere == null ? "" : plain(sphere.radius()), 86);
             resistivityField = numberField(
                     sphere == null ? "" : plain(sphere.resistivity()), 86);
+            dielectricField = numberField(sphere == null
+                    ? plain(DielectricConstant.VALUE)
+                    : plain(sphere.dielectricConstant()), 86);
 
             GridPane grid = new GridPane();
             grid.setHgap(7);
@@ -1513,6 +1750,7 @@ public final class ParameterPane extends BorderPane {
             addRow(grid, 2, "距井轴水平距离 / m", distanceField);
             addRow(grid, 3, "球半径 / m", radiusField);
             addRow(grid, 4, "电阻率 / (Ω·m)", resistivityField);
+            addRow(grid, 5, "介电常数 εr", dielectricField);
 
             card.getStyleClass().addAll("fracture-card", "sphere-fracture-card");
             card.getChildren().addAll(header, grid);
@@ -1533,7 +1771,9 @@ public final class ParameterPane extends BorderPane {
                     readNumber(radiusField.getText(),
                             "第 " + index + " 个球体半径"),
                     readNumber(resistivityField.getText(),
-                            "第 " + index + " 个球体电阻率"));
+                            "第 " + index + " 个球体电阻率"),
+                    readPositiveNumber(dielectricField.getText(),
+                            "第 " + index + " 个球体介电常数 εr"));
         }
 
         private boolean allBlank() {
@@ -1541,6 +1781,87 @@ public final class ParameterPane extends BorderPane {
                     && azimuthField.getText().isBlank()
                     && distanceField.getText().isBlank()
                     && radiusField.getText().isBlank()
+                    && resistivityField.getText().isBlank();
+        }
+    }
+
+    private final class CubeRow {
+
+        private final VBox card = new VBox(6);
+        private final Label title = new Label();
+        private final Button deleteButton = smallButton("删除");
+
+        private final TextField depthField;
+        private final TextField azimuthField;
+        private final TextField distanceField;
+        private final TextField sideLengthField;
+        private final TextField resistivityField;
+        private final TextField dielectricField;
+
+        private CubeRow(CubeAnomaly cube) {
+
+            title.getStyleClass().add("section-title");
+
+            HBox header = new HBox(6, title, new Region(), deleteButton);
+            HBox.setHgrow(header.getChildren().get(1), Priority.ALWAYS);
+            header.setAlignment(Pos.CENTER_LEFT);
+
+            depthField = numberField(
+                    cube == null ? "" : plain(cube.centerDepth()), 86);
+            azimuthField = numberField(
+                    cube == null ? "" : plain(cube.azimuthDeg()), 86);
+            distanceField = numberField(
+                    cube == null ? "" : plain(cube.distanceFromAxis()), 86);
+            sideLengthField = numberField(
+                    cube == null ? "" : plain(cube.sideLength()), 86);
+            resistivityField = numberField(
+                    cube == null ? "" : plain(cube.resistivity()), 86);
+            dielectricField = numberField(cube == null
+                    ? plain(DielectricConstant.VALUE)
+                    : plain(cube.dielectricConstant()), 86);
+
+            GridPane grid = new GridPane();
+            grid.setHgap(7);
+            grid.setVgap(6);
+            grid.getColumnConstraints().addAll(
+                    column(118, HPos.LEFT), column(86, HPos.LEFT));
+
+            addRow(grid, 0, "中心深度 / m", depthField);
+            addRow(grid, 1, "方位角 / °", azimuthField);
+            addRow(grid, 2, "距井轴水平距离 / m", distanceField);
+            addRow(grid, 3, "棱长 / m", sideLengthField);
+            addRow(grid, 4, "电阻率 / (Ω·m)", resistivityField);
+            addRow(grid, 5, "介电常数 εr", dielectricField);
+
+            card.getStyleClass().add("fracture-card");
+            card.getChildren().addAll(header, grid);
+        }
+
+        private CubeAnomaly toCube(int index) {
+
+            if (allBlank()) {
+                return null;
+            }
+            return new CubeAnomaly(
+                    readNumber(depthField.getText(),
+                            "第 " + index + " 个正方体中心深度"),
+                    readNumber(azimuthField.getText(),
+                            "第 " + index + " 个正方体方位角"),
+                    readNumber(distanceField.getText(),
+                            "第 " + index + " 个正方体距井轴水平距离"),
+                    readNumber(sideLengthField.getText(),
+                            "第 " + index + " 个正方体棱长"),
+                    readNumber(resistivityField.getText(),
+                            "第 " + index + " 个正方体电阻率"),
+                    readPositiveNumber(dielectricField.getText(),
+                            "第 " + index + " 个正方体介电常数 εr"));
+        }
+
+        private boolean allBlank() {
+            return depthField.getText().isBlank()
+                    && azimuthField.getText().isBlank()
+                    && distanceField.getText().isBlank()
+                    && sideLengthField.getText().isBlank()
                     && resistivityField.getText().isBlank();
         }
     }
@@ -1558,6 +1879,7 @@ public final class ParameterPane extends BorderPane {
         private final TextField rightAzimuthField;
         private final TextField rightDepthField;
         private final TextField resistivityField;
+        private final TextField dielectricField;
 
         private WedgeRow(WedgeFracture wedge) {
 
@@ -1581,6 +1903,9 @@ public final class ParameterPane extends BorderPane {
                     wedge == null ? "" : plain(wedge.rightDepth()), 86);
             resistivityField = numberField(
                     wedge == null ? "" : plain(wedge.resistivity()), 86);
+            dielectricField = numberField(wedge == null
+                    ? plain(DielectricConstant.VALUE)
+                    : plain(wedge.dielectricConstant()), 86);
 
             GridPane grid = new GridPane();
             grid.setHgap(7);
@@ -1595,6 +1920,7 @@ public final class ParameterPane extends BorderPane {
             addRow(grid, 4, "右底方位角 / °", rightAzimuthField);
             addRow(grid, 5, "右底深度 / m", rightDepthField);
             addRow(grid, 6, "电阻率 / (Ω·m)", resistivityField);
+            addRow(grid, 7, "介电常数 εr", dielectricField);
 
             card.getStyleClass().add("fracture-card");
             card.getChildren().addAll(header, grid);
@@ -1619,7 +1945,9 @@ public final class ParameterPane extends BorderPane {
                     readNumber(rightDepthField.getText(),
                             "第 " + index + " 个楔形体右底深度"),
                     readNumber(resistivityField.getText(),
-                            "第 " + index + " 个楔形体电阻率"));
+                            "第 " + index + " 个楔形体电阻率"),
+                    readPositiveNumber(dielectricField.getText(),
+                            "第 " + index + " 个楔形体介电常数 εr"));
         }
 
         private boolean allBlank() {
@@ -1645,6 +1973,7 @@ public final class ParameterPane extends BorderPane {
         private final TextField angularSpanField;
         private final TextField depthSpanField;
         private final TextField resistivityField;
+        private final TextField dielectricField;
 
         private TextRow(SurfaceText text) {
 
@@ -1669,6 +1998,9 @@ public final class ParameterPane extends BorderPane {
                     text == null ? "" : plain(text.depthSpanM()), 86);
             resistivityField = numberField(
                     text == null ? "" : plain(text.resistivity()), 86);
+            dielectricField = numberField(text == null
+                    ? plain(DielectricConstant.VALUE)
+                    : plain(text.dielectricConstant()), 86);
 
             GridPane grid = new GridPane();
             grid.setHgap(7);
@@ -1682,6 +2014,7 @@ public final class ParameterPane extends BorderPane {
             addRow(grid, 3, "横向跨度角度 / °", angularSpanField);
             addRow(grid, 4, "纵向跨度高度 / m", depthSpanField);
             addRow(grid, 5, "电阻率 / (Ω·m)", resistivityField);
+            addRow(grid, 6, "介电常数 εr", dielectricField);
 
             card.getStyleClass().add("fracture-card");
             card.getChildren().addAll(header, grid);
@@ -1705,7 +2038,9 @@ public final class ParameterPane extends BorderPane {
                     readNumber(depthSpanField.getText(),
                             "第 " + index + " 条文字纵向跨度高度"),
                     readNumber(resistivityField.getText(),
-                            "第 " + index + " 条文字电阻率"));
+                            "第 " + index + " 条文字电阻率"),
+                    readPositiveNumber(dielectricField.getText(),
+                            "第 " + index + " 条文字介电常数 εr"));
         }
 
         private boolean allBlank() {

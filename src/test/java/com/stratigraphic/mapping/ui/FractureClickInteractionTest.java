@@ -90,9 +90,9 @@ class FractureClickInteractionTest {
                 PauseTransition settle = new PauseTransition(Duration.millis(1000));
                 settle.setOnFinished(event -> {
                     try {
-                        TitledPane fracturePane = findTitledPane(root, "裂缝");
-                        assertNotNull(fracturePane, "未找到裂缝参数分组");
-                        assertTrue(fracturePane.isExpanded(), "点击楔形体后裂缝分组未展开");
+                        TitledPane anomalyPane = findTitledPane(root, "异常体");
+                        assertNotNull(anomalyPane, "未找到异常体参数分组");
+                        assertTrue(anomalyPane.isExpanded(), "点击楔形体后异常体分组未展开");
 
                         @SuppressWarnings("unchecked")
                         List<Object> wedgeRows = (List<Object>) readField(
@@ -179,9 +179,9 @@ class FractureClickInteractionTest {
                 PauseTransition settle = new PauseTransition(Duration.millis(1000));
                 settle.setOnFinished(event -> {
                     try {
-                        TitledPane fracturePane = findTitledPane(root, "裂缝");
-                        assertNotNull(fracturePane, "未找到裂缝参数分组");
-                        assertTrue(fracturePane.isExpanded(), "点击球体后裂缝参数分组未展开");
+                        TitledPane anomalyPane = findTitledPane(root, "异常体");
+                        assertNotNull(anomalyPane, "未找到异常体参数分组");
+                        assertTrue(anomalyPane.isExpanded(), "点击球形异常体后异常体分组未展开");
 
                         Node sphereCard = root.lookup(".sphere-fracture-card");
                         assertNotNull(sphereCard, "未找到球体参数卡");

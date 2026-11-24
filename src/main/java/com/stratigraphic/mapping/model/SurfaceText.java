@@ -4,13 +4,26 @@ package com.stratigraphic.mapping.model;
  * 井壁展开图上的曲面文字。
  *
  * <p>方位角和跨度单位为度，深度和纵向跨度单位为米，电阻率单位为 Ω·m。
+ *
+ * @param dielectricConstant 相对介电常数
  */
 public record SurfaceText(String content,
                           double centerAzimuthDeg,
                           double centerDepth,
                           double angularSpanDeg,
                           double depthSpanM,
-                          double resistivity) {
+                          double resistivity,
+                          double dielectricConstant) {
+
+    public SurfaceText(String content,
+                       double centerAzimuthDeg,
+                       double centerDepth,
+                       double angularSpanDeg,
+                       double depthSpanM,
+                       double resistivity) {
+        this(content, centerAzimuthDeg, centerDepth, angularSpanDeg, depthSpanM,
+                resistivity, DielectricConstant.VALUE);
+    }
 
     public SurfaceText {
         if (content == null || content.isBlank()) {
@@ -30,6 +43,9 @@ public record SurfaceText(String content,
         }
         if (!Double.isFinite(resistivity) || resistivity <= 0) {
             throw new IllegalArgumentException("文字电阻率必须大于 0");
+        }
+        if (!Double.isFinite(dielectricConstant) || dielectricConstant <= 0) {
+            throw new IllegalArgumentException("文字介电常数 εr 必须大于 0");
         }
     }
 

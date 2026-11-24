@@ -238,6 +238,7 @@ public final class MainController {
         chart.setOnFractureSelected(parameterPane::revealFracture);
         chart.setOnSphereSelected(parameterPane::revealSphere);
         chart.setOnWedgeSelected(parameterPane::revealWedge);
+        chart.setOnCubeSelected(parameterPane::revealCube);
         chart.setOnTextSelected(parameterPane::revealText);
         chart.setOnInterfaceSelected(parameterPane::revealInterface);
         chart.setOnLayerSelected(parameterPane::revealLayer);
@@ -266,6 +267,7 @@ public final class MainController {
         chart.setOnFractureSelected(parameterPane::revealFracture);
         chart.setOnSphereSelected(parameterPane::revealSphere);
         chart.setOnWedgeSelected(parameterPane::revealWedge);
+        chart.setOnCubeSelected(parameterPane::revealCube);
         chart.setOnLayerSelected(parameterPane::revealLayer);
         if (threeDChart != null) {
             threeDChart.stopAnimation();

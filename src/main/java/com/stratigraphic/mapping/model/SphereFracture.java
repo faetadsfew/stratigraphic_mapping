@@ -8,12 +8,23 @@ package com.stratigraphic.mapping.model;
  * @param distanceFromAxis 球心距井轴的水平距离 (m)
  * @param radius 球半径 (m)
  * @param resistivity 电阻率 (Ω·m)
+ * @param dielectricConstant 相对介电常数
  */
 public record SphereFracture(double centerDepth,
                              double azimuthDeg,
                              double distanceFromAxis,
                              double radius,
-                             double resistivity) {
+                             double resistivity,
+                             double dielectricConstant) {
+
+    public SphereFracture(double centerDepth,
+                          double azimuthDeg,
+                          double distanceFromAxis,
+                          double radius,
+                          double resistivity) {
+        this(centerDepth, azimuthDeg, distanceFromAxis, radius, resistivity,
+                DielectricConstant.VALUE);
+    }
 
     public SphereFracture {
         if (!Double.isFinite(centerDepth)) {
@@ -30,6 +41,9 @@ public record SphereFracture(double centerDepth,
         }
         if (!Double.isFinite(resistivity) || resistivity <= 0) {
             throw new IllegalArgumentException("球体电阻率必须大于 0");
+        }
+        if (!Double.isFinite(dielectricConstant) || dielectricConstant <= 0) {
+            throw new IllegalArgumentException("球体介电常数 εr 必须大于 0");
         }
     }
 

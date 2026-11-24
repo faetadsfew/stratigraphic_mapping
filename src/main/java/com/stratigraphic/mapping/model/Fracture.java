@@ -7,11 +7,21 @@ package com.stratigraphic.mapping.model;
  * @param normalElevationDeg 裂缝法向仰角 (°)，允许任意有限值；按 180° 周期等价
  * @param normalAzimuthDeg 裂缝法向方位角 (°)，允许任意有限值；按 360° 周期等价
  * @param resistivity 裂缝电阻率 R1 (Ω·m)，同时用于裂缝颜色分级
+ * @param dielectricConstant 裂缝相对介电常数
  */
 public record Fracture(double depth,
                        double normalElevationDeg,
                        double normalAzimuthDeg,
-                       double resistivity) {
+                       double resistivity,
+                       double dielectricConstant) {
+
+    public Fracture(double depth,
+                    double normalElevationDeg,
+                    double normalAzimuthDeg,
+                    double resistivity) {
+        this(depth, normalElevationDeg, normalAzimuthDeg, resistivity,
+                DielectricConstant.VALUE);
+    }
 
     public Fracture {
         if (!Double.isFinite(depth)) {
@@ -25,6 +35,9 @@ public record Fracture(double depth,
         }
         if (!Double.isFinite(resistivity) || resistivity <= 0) {
             throw new IllegalArgumentException("裂缝电阻率 R1 必须大于 0");
+        }
+        if (!Double.isFinite(dielectricConstant) || dielectricConstant <= 0) {
+            throw new IllegalArgumentException("裂缝介电常数 εr 必须大于 0");
         }
     }
 

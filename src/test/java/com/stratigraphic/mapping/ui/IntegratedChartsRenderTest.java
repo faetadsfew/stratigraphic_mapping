@@ -1,5 +1,6 @@
 package com.stratigraphic.mapping.ui;
 
+import com.stratigraphic.mapping.model.CubeAnomaly;
 import com.stratigraphic.mapping.model.Fracture;
 import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
@@ -63,7 +64,9 @@ class IntegratedChartsRenderTest {
                                 new StratumInterface(1.4)),
                         List.of(20.0, 16.0, 12.0, 28.0, 40.0),
                         List.of(new Fracture(0.9, 30, 30, 20),
-                                new Fracture(1.3, 60, 30, 200)));
+                                new Fracture(1.3, 60, 30, 200)),
+                        List.of(), List.of(), List.of(),
+                        List.of(new CubeAnomaly(1.05, 45, 0.12, 0.12, 120)));
                 parameterPane.setModel(model, "synthetic parameters");
 
                 Method generate = MainController.class.getDeclaredMethod("generateCharts");
@@ -161,7 +164,11 @@ class IntegratedChartsRenderTest {
                 assertEquals(1, result.sphereFractures().size());
                 assertEquals(5.6, result.sphereFractures().get(0).centerDepth(), 1e-12);
                 assertEquals(0.08, result.sphereFractures().get(0).radius(), 1e-12);
-                assertEquals(500, result.sphereFractures().get(0).resistivity(), 1e-12);
+                assertEquals(50, result.sphereFractures().get(0).resistivity(), 1e-12);
+                assertEquals(1, result.cubeAnomalies().size());
+                assertEquals(5.45, result.cubeAnomalies().get(0).centerDepth(), 1e-12);
+                assertEquals(0.14, result.cubeAnomalies().get(0).sideLength(), 1e-12);
+                assertEquals(70, result.cubeAnomalies().get(0).resistivity(), 1e-12);
                 assertEquals(1, result.surfaceTexts().size());
                 assertEquals("文字", result.surfaceTexts().get(0).content());
                 assertEquals(5.9, result.surfaceTexts().get(0).centerDepth(), 1e-12);

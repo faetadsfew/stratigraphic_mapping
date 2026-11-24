@@ -3,7 +3,7 @@ package com.stratigraphic.mapping.model;
 import java.util.List;
 
 /**
- * 地层剖面模型：井眼参数 + 统一倾角 + n 条界面 + n+1 层电阻率 + 裂缝。
+ * 地层剖面模型：井眼参数 + 统一倾角 + n 条界面 + n+1 层电阻率 + 裂缝与异常体。
  *
  * <p>界面把井轴切成 n + 1 段，所以电阻率的个数恒为 n + 1。
  * 电阻率列表按深度由浅到深排列，第 i 层位于第 i 条界面之上。
@@ -15,13 +15,16 @@ public final class StratumModel {
 
     private final double wellRadius;
     private final double wellResistivity;
+    private final double wellDielectricConstant;
     private final double dipAngle;
     private final List<StratumInterface> interfaces;
     private final List<Double> resistivities;
+    private final List<Double> layerDielectricConstants;
     private final List<Fracture> fractures;
     private final List<SphereFracture> sphereFractures;
     private final List<WedgeFracture> wedgeFractures;
     private final List<SurfaceText> surfaceTexts;
+    private final List<CubeAnomaly> cubeAnomalies;
 
     public StratumModel(double wellRadius,
                         double wellResistivity,
@@ -79,11 +82,67 @@ public final class StratumModel {
                         List<WedgeFracture> wedgeFractures,
                         List<SurfaceText> surfaceTexts) {
 
+        this(wellRadius, wellResistivity, DielectricConstant.VALUE, dipAngle,
+                interfaces, resistivities,
+                defaultLayerDielectricConstants(resistivities.size()),
+                fractures, sphereFractures, wedgeFractures, surfaceTexts, List.of());
+    }
+
+    public StratumModel(double wellRadius,
+                        double wellResistivity,
+                        double dipAngle,
+                        List<StratumInterface> interfaces,
+                        List<Double> resistivities,
+                        List<Fracture> fractures,
+                        List<SphereFracture> sphereFractures,
+                        List<WedgeFracture> wedgeFractures,
+                        List<SurfaceText> surfaceTexts,
+                        List<CubeAnomaly> cubeAnomalies) {
+
+        this(wellRadius, wellResistivity, DielectricConstant.VALUE, dipAngle,
+                interfaces, resistivities,
+                defaultLayerDielectricConstants(resistivities.size()),
+                fractures, sphereFractures, wedgeFractures, surfaceTexts, cubeAnomalies);
+    }
+
+    public StratumModel(double wellRadius,
+                        double wellResistivity,
+                        double wellDielectricConstant,
+                        double dipAngle,
+                        List<StratumInterface> interfaces,
+                        List<Double> resistivities,
+                        List<Double> layerDielectricConstants,
+                        List<Fracture> fractures,
+                        List<SphereFracture> sphereFractures,
+                        List<WedgeFracture> wedgeFractures,
+                        List<SurfaceText> surfaceTexts) {
+
+        this(wellRadius, wellResistivity, wellDielectricConstant, dipAngle,
+                interfaces, resistivities, layerDielectricConstants,
+                fractures, sphereFractures, wedgeFractures, surfaceTexts, List.of());
+    }
+
+    public StratumModel(double wellRadius,
+                        double wellResistivity,
+                        double wellDielectricConstant,
+                        double dipAngle,
+                        List<StratumInterface> interfaces,
+                        List<Double> resistivities,
+                        List<Double> layerDielectricConstants,
+                        List<Fracture> fractures,
+                        List<SphereFracture> sphereFractures,
+                        List<WedgeFracture> wedgeFractures,
+                        List<SurfaceText> surfaceTexts,
+                        List<CubeAnomaly> cubeAnomalies) {
+
         check(wellRadius > 0 && Double.isFinite(wellRadius),
                 "井眼半径必须是大于 0 的数");
 
         check(wellResistivity > 0 && Double.isFinite(wellResistivity),
                 "井眼电阻率必须是大于 0 的数");
+
+        check(wellDielectricConstant > 0 && Double.isFinite(wellDielectricConstant),
+                "井眼介电常数 εr 必须是大于 0 的数");
 
         check(Double.isFinite(dipAngle) && dipAngle > 0 && dipAngle < 180,
                 "统一倾角必须在 0° 与 180° 之间");
@@ -110,15 +169,28 @@ public final class StratumModel {
                     "第 " + (i + 1) + " 层电阻率必须是大于 0 的数");
         }
 
+        check(layerDielectricConstants.size() == resistivities.size(),
+                "层介电常数应有 " + resistivities.size() + " 个，实际给了 "
+                        + layerDielectricConstants.size() + " 个");
+
+        for (int i = 0; i < layerDielectricConstants.size(); i++) {
+            double epsilon = layerDielectricConstants.get(i);
+            check(epsilon > 0 && Double.isFinite(epsilon),
+                    "第 " + (i + 1) + " 层介电常数 εr 必须是大于 0 的数");
+        }
+
         this.wellRadius = wellRadius;
         this.wellResistivity = wellResistivity;
+        this.wellDielectricConstant = wellDielectricConstant;
         this.dipAngle = dipAngle;
         this.interfaces = List.copyOf(interfaces);
         this.resistivities = List.copyOf(resistivities);
+        this.layerDielectricConstants = List.copyOf(layerDielectricConstants);
         this.fractures = List.copyOf(fractures);
         this.sphereFractures = List.copyOf(sphereFractures);
         this.wedgeFractures = List.copyOf(wedgeFractures);
         this.surfaceTexts = List.copyOf(surfaceTexts);
+        this.cubeAnomalies = List.copyOf(cubeAnomalies);
     }
 
     /** 兼容旧调用：未给出统一倾角时按水平界面处理。 */
@@ -143,6 +215,20 @@ public final class StratumModel {
     /** 井眼电阻率 (Ω·m)。 */
     public double wellResistivity() {
         return wellResistivity;
+    }
+
+    /** 井眼介质的相对介电常数 εr。 */
+    public double dielectricConstant() {
+        return wellDielectricConstant;
+    }
+
+    /** 各层介质的相对介电常数 εr，长度 = 界面数 + 1。 */
+    public List<Double> layerDielectricConstants() {
+        return layerDielectricConstants;
+    }
+
+    public double dielectricConstantOf(int layer) {
+        return layerDielectricConstants.get(layer);
     }
 
     /** 全部地层界面共用的倾角 (°)；90° 表示水平。 */
@@ -173,6 +259,11 @@ public final class StratumModel {
     /** 楔形体裂缝列表，只用于井壁展开图。 */
     public List<WedgeFracture> wedgeFractures() {
         return wedgeFractures;
+    }
+
+    /** 正方体异常体列表，同时用于三维图与井壁展开图。 */
+    public List<CubeAnomaly> cubeAnomalies() {
+        return cubeAnomalies;
     }
 
     /** 井壁展开图上的曲面文字列表。 */
@@ -215,9 +306,13 @@ public final class StratumModel {
                                         sphereFractures.stream()
                                                 .mapToDouble(SphereFracture::resistivity)
                                                 .max().orElse(0),
-                                        wedgeFractures.stream()
-                                                .mapToDouble(WedgeFracture::resistivity)
-                                                .max().orElse(0)))));
+                                        Math.max(
+                                                wedgeFractures.stream()
+                                                        .mapToDouble(WedgeFracture::resistivity)
+                                                        .max().orElse(0),
+                                                cubeAnomalies.stream()
+                                                        .mapToDouble(CubeAnomaly::resistivity)
+                                                        .max().orElse(0))))));
     }
 
     /** 岩性剖面使用的最大电阻率：不包含只在井壁展开图显示的球体与楔形体裂缝。 */
@@ -241,9 +336,13 @@ public final class StratumModel {
                                         sphereFractures.stream()
                                                 .mapToDouble(SphereFracture::resistivity)
                                                 .min().orElse(wellResistivity),
-                                        wedgeFractures.stream()
-                                                .mapToDouble(WedgeFracture::resistivity)
-                                                .min().orElse(wellResistivity)))));
+                                        Math.min(
+                                                wedgeFractures.stream()
+                                                        .mapToDouble(WedgeFracture::resistivity)
+                                                        .min().orElse(wellResistivity),
+                                                cubeAnomalies.stream()
+                                                        .mapToDouble(CubeAnomaly::resistivity)
+                                                        .min().orElse(wellResistivity))))));
     }
 
     /** 岩性剖面使用的最小电阻率：不包含只在井壁展开图显示的球体与楔形体裂缝。 */
@@ -254,5 +353,13 @@ public final class StratumModel {
                                 .min().orElse(wellResistivity),
                         fractures.stream().mapToDouble(Fracture::resistivity)
                                 .min().orElse(wellResistivity)));
+    }
+
+    private static List<Double> defaultLayerDielectricConstants(int count) {
+        List<Double> values = new java.util.ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            values.add(DielectricConstant.VALUE);
+        }
+        return values;
     }
 }

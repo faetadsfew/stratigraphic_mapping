@@ -1,5 +1,6 @@
 package com.stratigraphic.mapping.chart;
 
+import com.stratigraphic.mapping.model.CubeAnomaly;
 import com.stratigraphic.mapping.model.Fracture;
 import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
@@ -75,6 +76,8 @@ public final class WallLineUnfoldChart extends Pane {
     };
     private IntConsumer onWedgeSelected = index -> {
     };
+    private IntConsumer onCubeSelected = index -> {
+    };
     private IntConsumer onTextSelected = index -> {
     };
 
@@ -104,6 +107,7 @@ public final class WallLineUnfoldChart extends Pane {
         getChildren().add(canvas);
 
         draw();
+        addCubeAnomalies();
         addWedgeFractures();
         addSphereFractures();
         if (showLegend) {
@@ -139,6 +143,12 @@ public final class WallLineUnfoldChart extends Pane {
     /** 设置楔形体裂缝点击回调；参数是楔形体在模型列表中的序号。 */
     public void setOnWedgeSelected(IntConsumer action) {
         this.onWedgeSelected = action == null ? index -> {
+        } : action;
+    }
+
+    /** 设置正方体异常体点击回调；参数是正方体在模型列表中的序号。 */
+    public void setOnCubeSelected(IntConsumer action) {
+        this.onCubeSelected = action == null ? index -> {
         } : action;
     }
 
@@ -524,6 +534,59 @@ public final class WallLineUnfoldChart extends Pane {
         getChildren().add(sphereGroup);
     }
 
+    /** 正方体与井壁的交线区域：方位角—深度平面上的矩形色块。 */
+    private void addCubeAnomalies() {
+
+        if (model.cubeAnomalies().isEmpty()) {
+            return;
+        }
+
+        Group cubeGroup = new Group();
+        cubeGroup.setClip(new Rectangle(
+                MARGIN_LEFT, MARGIN_TOP, PLOT_WIDTH, PLOT_HEIGHT));
+
+        for (CubeAnomaly cube : model.cubeAnomalies()) {
+            CubeTrace.Trace trace = CubeTrace.of(model.wellRadius(), cube);
+            if (trace.isEmpty()) {
+                continue;
+            }
+
+            Color color = resistivityScale.colorOf(cube.resistivity());
+            for (CubeTrace.Span span : trace.spans()) {
+                for (double shift : WRAP_SHIFTS) {
+                    Polygon polygon = new Polygon();
+                    polygon.getPoints().addAll(
+                            angleToX(span.startDeg() + shift), zToY(trace.depthMin()),
+                            angleToX(span.endDeg() + shift), zToY(trace.depthMin()),
+                            angleToX(span.endDeg() + shift), zToY(trace.depthMax()),
+                            angleToX(span.startDeg() + shift), zToY(trace.depthMax()));
+                    polygon.setFill(color.deriveColor(0, 1, 0.95, 0.76));
+                    polygon.setStroke(color.deriveColor(0, 1, 0.70, 0.95));
+                    polygon.setStrokeWidth(1.5);
+                    polygon.setMouseTransparent(true);
+                    polygon.getStyleClass().add("cube-anomaly");
+                    cubeGroup.getChildren().add(polygon);
+                    resistivityPatches.add(new ResistivityPatch(polygon, cube.resistivity()));
+                }
+            }
+        }
+        getChildren().add(cubeGroup);
+    }
+
+    /** 返回点击位置命中的正方体序号；不在交线区域内时返回 -1。 */
+    private int cubeAt(double x, double y) {
+        double angle = xToAngle(x);
+        double depth = yToZ(y);
+        for (int i = 0; i < model.cubeAnomalies().size(); i++) {
+            CubeTrace.Trace trace = CubeTrace.of(model.wellRadius(),
+                    model.cubeAnomalies().get(i));
+            if (!trace.isEmpty() && trace.contains(angle, depth)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private Path spherePath(SphereTrace.Trace trace, double angleShift, Color color) {
 
         Path path = new Path();
@@ -697,6 +760,12 @@ public final class WallLineUnfoldChart extends Pane {
         int textIndex = textAt(x, y);
         if (textIndex >= 0) {
             onTextSelected.accept(textIndex);
+            return;
+        }
+
+        int cubeIndex = cubeAt(x, y);
+        if (cubeIndex >= 0) {
+            onCubeSelected.accept(cubeIndex);
             return;
         }
 

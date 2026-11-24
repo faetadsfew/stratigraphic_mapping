@@ -5,6 +5,8 @@ package com.stratigraphic.mapping.model;
  *
  * <p>角度单位为度 (°)，深度单位为米 (m)，电阻率单位为 Ω·m。
  * 该对象只用于井壁展开图，不参与岩性剖面图绘制。
+ *
+ * @param dielectricConstant 相对介电常数
  */
 public record WedgeFracture(double vertexAzimuthDeg,
                             double vertexDepth,
@@ -12,7 +14,19 @@ public record WedgeFracture(double vertexAzimuthDeg,
                             double leftDepth,
                             double rightAzimuthDeg,
                             double rightDepth,
-                            double resistivity) {
+                            double resistivity,
+                            double dielectricConstant) {
+
+    public WedgeFracture(double vertexAzimuthDeg,
+                         double vertexDepth,
+                         double leftAzimuthDeg,
+                         double leftDepth,
+                         double rightAzimuthDeg,
+                         double rightDepth,
+                         double resistivity) {
+        this(vertexAzimuthDeg, vertexDepth, leftAzimuthDeg, leftDepth,
+                rightAzimuthDeg, rightDepth, resistivity, DielectricConstant.VALUE);
+    }
 
     public WedgeFracture {
         if (!Double.isFinite(vertexAzimuthDeg)) {
@@ -35,6 +49,9 @@ public record WedgeFracture(double vertexAzimuthDeg,
         }
         if (!Double.isFinite(resistivity) || resistivity <= 0) {
             throw new IllegalArgumentException("楔形体电阻率必须大于 0");
+        }
+        if (!Double.isFinite(dielectricConstant) || dielectricConstant <= 0) {
+            throw new IllegalArgumentException("楔形体介电常数 εr 必须大于 0");
         }
     }
 

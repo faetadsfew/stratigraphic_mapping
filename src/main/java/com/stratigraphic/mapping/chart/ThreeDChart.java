@@ -1,5 +1,6 @@
 package com.stratigraphic.mapping.chart;
 
+import com.stratigraphic.mapping.model.CubeAnomaly;
 import com.stratigraphic.mapping.model.Fracture;
 import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
@@ -39,6 +40,7 @@ import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.LinearGradient;
 import javafx.scene.paint.Stop;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.Box;
 import javafx.scene.shape.CullFace;
 import javafx.scene.shape.DrawMode;
 import javafx.scene.shape.Line;
@@ -91,6 +93,8 @@ public final class ThreeDChart extends StackPane {
     };
     private IntConsumer onWedgeSelected = index -> {
     };
+    private IntConsumer onCubeSelected = index -> {
+    };
     private IntConsumer onLayerSelected = index -> {
     };
     private double zoomFactor = 1;
@@ -105,7 +109,7 @@ public final class ThreeDChart extends StackPane {
     }
 
     private enum Kind {
-        FRACTURE, SPHERE, WEDGE, LAYER
+        FRACTURE, SPHERE, WEDGE, CUBE, LAYER
     }
 
     public ThreeDChart(StratumModel model, double zTop, double zBottom) {
@@ -171,6 +175,11 @@ hintFade = new FadeTransition(Duration.seconds(1), hintLabel);
         } : action;
     }
 
+    public void setOnCubeSelected(IntConsumer action) {
+        onCubeSelected = action == null ? index -> {
+        } : action;
+    }
+
     public void setOnLayerSelected(IntConsumer action) {
         onLayerSelected = action == null ? index -> {
         } : action;
@@ -182,6 +191,7 @@ hintFade = new FadeTransition(Duration.seconds(1), hintLabel);
         buildWellBore();
         buildSpheres();
         buildWedges();
+        buildCubes();
         buildDepthAxis();
     }
 
@@ -635,6 +645,123 @@ hintFade = new FadeTransition(Duration.seconds(1), hintLabel);
         }
     }
 
+    /** 正方体异常体：按方位角对齐径向/切向，并画出它与井壁的交线。 */
+    private void buildCubes() {
+        for (int i = 0; i < model.cubeAnomalies().size(); i++) {
+            CubeAnomaly cube = model.cubeAnomalies().get(i);
+            if (!overlapsInterval(cube.centerDepth(), cube.halfSide())) {
+                continue;
+            }
+
+            double theta = Math.toRadians(cube.normalizedAzimuthDeg());
+            double side = cube.sideLength() * scale;
+            double half = side / 2;
+            Point3D center = ThreeDGeometry.worldPoint(
+                    cube.distanceFromAxis() * scale, cube.normalizedAzimuthDeg(),
+                    cube.centerDepth(), zMid, scale);
+            Point3D radial = new Point3D(Math.cos(theta), 0, Math.sin(theta));
+            Point3D tangential = new Point3D(-Math.sin(theta), 0, Math.cos(theta));
+            Point3D vertical = new Point3D(0, 1, 0);
+            Color color = colorScale.colorOf(cube.resistivity());
+
+            Box halo = new Box(side * 1.18, side * 1.18, side * 1.18);
+            halo.setMaterial(featureMaterial(color, 0.18));
+            halo.setCullFace(CullFace.NONE);
+            halo.setTranslateX(center.getX());
+            halo.setTranslateY(center.getY());
+            halo.setTranslateZ(center.getZ());
+            halo.getTransforms().add(new Rotate(-cube.normalizedAzimuthDeg(), Rotate.Y_AXIS));
+            halo.setMouseTransparent(true);
+            halo.setDepthTest(DepthTest.DISABLE);
+            modelGroup.getChildren().add(halo);
+
+            Box body = new Box(side, side, side);
+            body.setMaterial(featureMaterial(color, 0.92));
+            body.setCullFace(CullFace.NONE);
+            body.setTranslateX(center.getX());
+            body.setTranslateY(center.getY());
+            body.setTranslateZ(center.getZ());
+            body.getTransforms().add(new Rotate(-cube.normalizedAzimuthDeg(), Rotate.Y_AXIS));
+            body.setUserData(new PickTarget(Kind.CUBE, i));
+            body.setDepthTest(DepthTest.DISABLE);
+            modelGroup.getChildren().add(body);
+
+            modelGroup.getChildren().add(cubeEdges(
+                    center, radial, tangential, vertical, half, color));
+            addCubeWellTrace(CubeTrace.of(model.wellRadius(), cube), i, color);
+        }
+    }
+
+    private Group cubeEdges(Point3D center,
+                            Point3D radial,
+                            Point3D tangential,
+                            Point3D vertical,
+                            double half,
+                            Color color) {
+        Point3D[] corners = new Point3D[8];
+        for (int i = 0; i < 8; i++) {
+            double su = (i & 1) == 0 ? -half : half;
+            double sv = (i & 2) == 0 ? -half : half;
+            double sw = (i & 4) == 0 ? -half : half;
+            corners[i] = center
+                    .add(radial.multiply(su))
+                    .add(tangential.multiply(sv))
+                    .add(vertical.multiply(sw));
+        }
+
+        int[][] edges = {
+                {0, 1}, {1, 3}, {3, 2}, {2, 0},
+                {4, 5}, {5, 7}, {7, 6}, {6, 4},
+                {0, 4}, {1, 5}, {2, 6}, {3, 7}
+        };
+        Group group = new Group();
+        for (int[] edge : edges) {
+            List<Point3D> segment = List.of(corners[edge[0]], corners[edge[1]]);
+            group.getChildren().add(ThreeDGeometry.lineStrip(
+                    segment, Color.web("#FFFFFF", 0.68), 0.024));
+            group.getChildren().add(ThreeDGeometry.lineStrip(
+                    segment, color.deriveColor(0, 1, 0.72, 0.96), 0.012));
+        }
+        group.setMouseTransparent(true);
+        group.setDepthTest(DepthTest.DISABLE);
+        return group;
+    }
+
+    /** 正方体与井壁交线的三维轮廓，对应井壁展开图上的矩形区域边界。 */
+    private void addCubeWellTrace(CubeTrace.Trace trace, int index, Color color) {
+        if (trace.isEmpty()) {
+            return;
+        }
+        for (CubeTrace.Span span : trace.spans()) {
+            int steps = Math.max(2, (int) Math.ceil(span.lengthDeg() / 2.0));
+            List<Point3D> points = new ArrayList<>();
+            for (int step = 0; step <= steps; step++) {
+                double angle = span.startDeg() + span.lengthDeg() * step / steps;
+                points.add(ThreeDGeometry.worldPoint(
+                        1.012, angle, trace.depthMax(), zMid, scale));
+            }
+            for (int step = steps; step >= 0; step--) {
+                double angle = span.startDeg() + span.lengthDeg() * step / steps;
+                points.add(ThreeDGeometry.worldPoint(
+                        1.012, angle, trace.depthMin(), zMid, scale));
+            }
+            points.add(points.get(0));
+
+            Group glow = ThreeDGeometry.lineStrip(points, Color.web("#FFFFFF", 0.70), 0.030);
+            glow.setDepthTest(DepthTest.DISABLE);
+            glow.setMouseTransparent(false);
+            glow.setUserData(new PickTarget(Kind.CUBE, index));
+            modelGroup.getChildren().add(glow);
+
+            Group line = ThreeDGeometry.lineStrip(
+                    points, color.deriveColor(0, 1, 0.84, 0.96), 0.014);
+            line.setDepthTest(DepthTest.DISABLE);
+            line.setMouseTransparent(false);
+            line.setUserData(new PickTarget(Kind.CUBE, index));
+            modelGroup.getChildren().add(line);
+        }
+    }
+
     private void buildDepthAxis() {
         double x = -BLOCK_HALF_WIDTH - 0.72;
         double z = 0;
@@ -823,7 +950,11 @@ hintFade = new FadeTransition(Duration.seconds(1), hintLabel);
                 chip("楔形 " + model.wedgeFractures().size(), firstColor(
                         model.wedgeFractures().isEmpty() ? null
                                 : colorScale.colorOf(model.wedgeFractures().get(0).resistivity()),
-                        "#FACC15")));
+                        "#FACC15")),
+                chip("正方体 " + model.cubeAnomalies().size(), firstColor(
+                        model.cubeAnomalies().isEmpty() ? null
+                                : colorScale.colorOf(model.cubeAnomalies().get(0).resistivity()),
+                        "#FB7185")));
         first.setAlignment(Pos.CENTER);
         second.setAlignment(Pos.CENTER);
         VBox box = new VBox(4, first, second);
@@ -957,6 +1088,7 @@ hintFade = new FadeTransition(Duration.seconds(1), hintLabel);
             case FRACTURE -> onFractureSelected.accept(target.index());
             case SPHERE -> onSphereSelected.accept(target.index());
             case WEDGE -> onWedgeSelected.accept(target.index());
+            case CUBE -> onCubeSelected.accept(target.index());
             case LAYER -> onLayerSelected.accept(target.index());
         }
     }
