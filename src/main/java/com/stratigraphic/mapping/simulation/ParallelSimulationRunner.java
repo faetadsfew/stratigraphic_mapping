@@ -15,8 +15,8 @@ public final class ParallelSimulationRunner {
     private final SimulationRunner.ProcessFactory factory;
     public ParallelSimulationRunner() {this.factory=null;}
     ParallelSimulationRunner(SimulationRunner.ProcessFactory factory) {this.factory=factory;}
-    public static int maxParallelism() {return Math.max(1,Math.min(192,Runtime.getRuntime().availableProcessors()));}
-    public static int defaultParallelism() {return maxParallelism();}
+    public static int maxParallelism() {return ModelInputs.CHANNELS;}
+    public static int defaultParallelism() {return Math.max(1,Math.min(maxParallelism(),Runtime.getRuntime().availableProcessors()));}
 
     public static final class Control {
         private final AtomicBoolean paused=new AtomicBoolean(),stopped=new AtomicBoolean();

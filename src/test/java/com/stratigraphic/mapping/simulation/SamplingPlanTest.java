@@ -27,14 +27,18 @@ class SamplingPlanTest {
     }
     @Test void sampledInputsKeepOriginalGeometryAndSurviveArchivingButRejectTampering() throws Exception {
         ModelInputs original=base();byte[] old=Files.readAllBytes(original.cards().get(0).snapshot());
-        ModelInputs inputs=SamplingPlan.prepare(original,temp.resolve("cache"),0.2,2.5,0.9);
+        var parameters=new SamplingPlan.InputParameters(40_000_000,9.5,0.007,800,7.5);
+        ModelInputs inputs=SamplingPlan.prepare(original,temp.resolve("cache"),0.2,2.5,0.9,parameters);
         assertArrayEquals(old,Files.readAllBytes(original.cards().get(0).snapshot()));
         assertArrayEquals(old,Files.readAllBytes(temp.resolve("source/Card_001.txt")));
         for(var card:inputs.cards()) {
             assertEquals(0.2,card.model().begin());assertEquals(0.9,card.model().end());assertEquals(0.0025,card.model().step());
+            assertEquals(40_000_000,card.model().frequency());assertEquals(9.5,card.model().diameterInches());
+            assertEquals(0.007,card.model().offset());assertEquals(800,card.model().mudRho());assertEquals(7.5,card.model().mudEps());
             assertEquals(original.cards().get(card.id()-1).model().layers(),card.model().layers());
             assertEquals(original.cards().get(card.id()-1).model().fractures(),card.model().fractures());
         }
+        assertTrue(Files.readString(inputs.cards().get(0).snapshot()).startsWith("4.0E7 9.5\n0.007 800.0 7.5\n"));
         Path archived=Files.createDirectory(temp.resolve("archived"));inputs.copySnapshotTo(archived);
         ModelInputs restored=ModelInputs.restoreSnapshot(archived);InputPreparation.verifySnapshot(restored);
         assertEquals(SamplingPlan.read(inputs.directory()),SamplingPlan.read(archived));
@@ -74,6 +78,9 @@ class SamplingPlanTest {
         assertThrows(IllegalArgumentException.class,()->SamplingPlan.create(-0.1,0.001,0.9,0,1.5));
         assertThrows(IllegalArgumentException.class,()->SamplingPlan.create(0.2,0.001,1.6,0,1.5));
         assertThrows(IllegalArgumentException.class,()->SamplingPlan.create(0.9,0.001,0.2,0,1.5));
+        assertThrows(IllegalArgumentException.class,()->new SamplingPlan.InputParameters(0,8,0.005,1000,6));
+        assertThrows(IllegalArgumentException.class,()->new SamplingPlan.InputParameters(2_500_000,0,0.005,1000,6));
+        assertThrows(IllegalArgumentException.class,()->new SamplingPlan.InputParameters(2_500_000,8,-0.005,1000,6));
     }
     private Path solver() throws Exception {
         Path solver=Files.createDirectories(temp.resolve("solver"));Files.writeString(solver.resolve(SimulationRunner.EXE),"test executable");

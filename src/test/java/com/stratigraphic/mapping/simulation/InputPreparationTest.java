@@ -1,5 +1,6 @@
 package com.stratigraphic.mapping.simulation;
 
+import com.stratigraphic.mapping.model.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
@@ -39,6 +40,140 @@ class InputPreparationTest {
             Files.writeString(slices.resolve(name),raw);Files.writeString(inputs.resolve(name),"2500000 8\n0.005 1000 6\n"+raw);
         }
         return inputs;
+    }
+    @Test void finalCalculationDirectoryMatchesEverySampledInputAndPreservesSource()throws Exception {
+        Path destination=setup();
+        String previous=Files.readString(destination.resolve("Card_001_ang_model.txt"));
+        Files.writeString(destination.resolve("notes.csv"),"keep this file");
+        Files.writeString(destination.resolve("Card_001_obsolete.txt"),"stale electrode");
+        var sourceHashes=new LinkedHashMap<Path,String>();
+        try(var paths=Files.list(temp.resolve("192_Slices_Output"))) {
+            for(Path path:paths.toList())sourceHashes.put(path,SimulationHistory.sha256(path));
+        }
+        var parameters=new SamplingPlan.InputParameters(40_000_000,9.5,0.007,800,7.5);
+        var prepared=InputPreparation.prepareForCalculation(temp,temp.resolve("cache"),0,2.54,1.5,parameters,(done,message)->{});
+        assertEquals(192,prepared.updated());assertNotNull(prepared.backup());
+        assertEquals(previous,Files.readString(prepared.backup().resolve("Card_001_ang_model.txt")));
+        assertTrue(Files.isRegularFile(prepared.backup().resolve("Card_001_obsolete.txt")));
+        assertFalse(Files.exists(destination.resolve("Card_001_obsolete.txt")));
+        assertEquals("keep this file",Files.readString(destination.resolve("notes.csv")));
+        assertFalse(Files.exists(destination.resolve("conversion.properties")));
+        ModelInputs published=ModelInputs.restoreSnapshot(destination);
+        ModelInputs original=ModelInputs.restoreSnapshot(destination.resolve("sampling-original"));
+        assertEquals(192,ModelInputs.indexFiles(destination).size());
+        for(int index=0;index<192;index++) {
+            var card=prepared.inputs().cards().get(index);
+            assertEquals(-1,Files.mismatch(card.snapshot(),destination.resolve(card.name())));
+            assertEquals(card.model(),published.cards().get(index).model());
+            assertEquals(40_000_000,card.model().frequency());assertEquals(9.5,card.model().diameterInches());
+            assertEquals(0.007,card.model().offset());assertEquals(800,card.model().mudRho());assertEquals(7.5,card.model().mudEps());
+            assertEquals(Math.nextDown(1.5/591),card.model().step());
+            assertEquals(original.cards().get(index).model().layers(),card.model().layers());
+            assertEquals(original.cards().get(index).model().fractures(),card.model().fractures());
+            assertEquals(0.001,original.cards().get(index).model().step());
+        }
+        assertEquals(0.00254,SamplingPlan.read(destination).requestedStep());
+        assertEquals(592,SamplingPlan.read(destination).computedPoints());
+        for(var entry:sourceHashes.entrySet())assertEquals(entry.getValue(),SimulationHistory.sha256(entry.getKey()));
+        InputPreparation.verifySnapshot(published);
+        InputPreparation.verifyCurrentInputs(prepared.inputs(),temp,null);
+        Path archived=Files.createDirectory(temp.resolve("batch-inputs"));published.copySnapshotTo(archived);
+        InputPreparation.verifySnapshot(ModelInputs.restoreSnapshot(archived));
+    }
+    @Test void anotherCalculationReplacesFinalParametersButKeepsPreviousSnapshotAndBackup()throws Exception {
+        Path destination=setup();Path cache=temp.resolve("cache");
+        var firstParameters=new SamplingPlan.InputParameters(2_500_000,8,0.005,1000,6);
+        var first=InputPreparation.prepareForCalculation(temp,cache,0,2.54,1.5,firstParameters,(done,message)->{});
+        var nextParameters=new SamplingPlan.InputParameters(40_000_000,10,0.006,900,8);
+        var next=InputPreparation.prepareForCalculation(temp,cache,0.2,1,0.9,nextParameters,(done,message)->{});
+        assertNotEquals(first.inputs().directory(),next.inputs().directory());
+        assertEquals(0.00254,SamplingPlan.read(first.inputs().directory()).requestedStep());
+        assertEquals(0.00254,SamplingPlan.read(next.backup()).requestedStep());
+        assertEquals(0.001,SamplingPlan.read(destination).requestedStep());
+        for(var card:next.inputs().cards()) {
+            assertEquals(0.2,card.model().begin());assertEquals(0.9,card.model().end());assertEquals(0.001,card.model().step());
+            assertEquals(40_000_000,card.model().frequency());assertEquals(10,card.model().diameterInches());
+            assertEquals(-1,Files.mismatch(card.snapshot(),destination.resolve(card.name())));
+            assertEquals(-1,Files.mismatch(first.inputs().cards().get(card.id()-1).snapshot(),next.backup().resolve(card.name())));
+        }
+        InputPreparation.verifySnapshot(ModelInputs.restoreSnapshot(next.backup()));
+        InputPreparation.verifyCurrentInputs(first.inputs(),temp,null);
+        InputPreparation.verifyCurrentInputs(next.inputs(),temp,null);
+    }
+    @Test void invalidSamplingLeavesTheEntirePreviousCalculationDirectoryUntouched()throws Exception {
+        Path destination=setup();Path cache=temp.resolve("cache");
+        var parameters=new SamplingPlan.InputParameters(2_500_000,8,0.005,1000,6);
+        InputPreparation.prepareForCalculation(temp,cache,0,2.54,1.5,parameters,(done,message)->{});
+        Map<Path,String> before=new LinkedHashMap<>();
+        try(var paths=Files.walk(destination)) {
+            for(Path path:paths.filter(Files::isRegularFile).toList())before.put(path,SimulationHistory.sha256(path));
+        }
+        long backups;
+        try(var paths=Files.list(temp.resolve("input_backups"))){backups=paths.count();}
+        assertThrows(IllegalArgumentException.class,()->InputPreparation.prepareForCalculation(temp,cache,0,3,1.5,parameters,(done,message)->{}));
+        assertThrows(IllegalArgumentException.class,()->InputPreparation.prepareForCalculation(temp,cache,0,2.54,2,parameters,(done,message)->{}));
+        for(var entry:before.entrySet())assertEquals(entry.getValue(),SimulationHistory.sha256(entry.getKey()));
+        try(var paths=Files.list(temp.resolve("input_backups"))){assertEquals(backups,paths.count());}
+        InputPreparation.verifySnapshot(ModelInputs.restoreSnapshot(destination));
+    }
+    @Test void finalPublishedBytesReachTheSolverAndTheBatchArchive()throws Exception {
+        Path destination=setup();
+        var parameters=new SamplingPlan.InputParameters(40_000_000,9,0.006,800,7);
+        var prepared=InputPreparation.prepareForCalculation(temp,temp.resolve("cache"),0,2.54,1.5,parameters,(done,message)->{});
+        Files.writeString(temp.resolve(SimulationRunner.EXE),"fake executable");Files.writeString(temp.resolve(SimulationRunner.DLL),"fake DLL");
+        SamplingPlan plan=SamplingPlan.read(destination);
+        var runner=new ParallelSimulationRunner((work,console)->{
+            assertEquals(-1,Files.mismatch(destination.resolve("Card_001_ang_model.txt"),work.resolve("NGI_2D_INP.txt")));
+            var actual=ModelInputs.parse(Files.readString(work.resolve("NGI_2D_INP.txt")));
+            assertEquals(prepared.inputs().cards().get(0).model(),actual);
+            StringBuilder response=new StringBuilder();
+            for(int index=0;index<plan.computedPoints();index++)response.append(actual.begin()+index*actual.step()).append(" 3 4 5 53.13010235415598\n");
+            Files.writeString(work.resolve(SimulationRunner.LOG),response);Files.writeString(console,response);
+            return new Process() {
+                public OutputStream getOutputStream(){return OutputStream.nullOutputStream();}
+                public InputStream getInputStream(){return InputStream.nullInputStream();}
+                public InputStream getErrorStream(){return InputStream.nullInputStream();}
+                public int waitFor(){return 0;}
+                public int exitValue(){return 0;}
+                public void destroy(){ }
+            };
+        });
+        var outcome=runner.run(prepared.inputs(),temp,temp.resolve("output"),1,1,progress->{},()->false);
+        assertEquals(1,outcome.completed());
+        Path archived=outcome.batch().resolve("inputs");
+        assertEquals(-1,Files.mismatch(destination.resolve("Card_001_ang_model.txt"),archived.resolve("Card_001_ang_model.txt")));
+        assertEquals(plan,SamplingPlan.read(archived));
+        InputPreparation.verifySnapshot(ModelInputs.restoreSnapshot(archived));
+    }
+    @Test void finalPublicationRetainsAllThreeAnomaliesAndTheirPermittivities()throws Exception {
+        var model=new StratumModel(0.1016,100,1,90,List.of(new StratumInterface(0.5)),
+                List.of(20.0,40.0),List.of(3.0,37.0),List.of(new Fracture(0.75,30,0,120,41)),
+                List.of(new SphereFracture(0.55,0,0.1016,0.04,80,17)),
+                List.of(new WedgeFracture(330,0.8,30,0.9,30,0.7,90,23)),List.of(),
+                List.of(new CubeAnomaly(0.3,0,0.1016,0.08,70,13)));
+        var generated=new SliceGenerationService(temp).generate(model,0,1);
+        MaterialPipelineTest.writeReferences(temp);
+        var parameters=new SamplingPlan.InputParameters(2_500_000,8,0.005,1000,6);
+        var prepared=InputPreparation.prepareForCalculation(temp,temp.resolve("cache"),0,2.54,1,parameters,(done,message)->{});
+        Path destination=temp.resolve("192_NGI_Input");
+        assertNull(prepared.backup());
+        for(var card:prepared.inputs().cards()) {
+            var raw=ModelInputs.parse("1 1\n0 1 1\n"+Files.readString(generated.output().resolve(card.name())));
+            assertEquals(-1,Files.mismatch(card.snapshot(),destination.resolve(card.name())));
+            assertEquals(raw.layers().size(),card.model().layers().size());
+            for(int index=0;index<raw.layers().size();index++) {
+                assertEquals(raw.layers().get(index).get(1),card.model().layers().get(index).get(1));
+                assertEquals(raw.layers().get(index).get(2),card.model().layers().get(index).get(2));
+            }
+        }
+        var first=prepared.inputs().cards().get(0).model();
+        for(var expected:List.of(List.of(0.3,70.0,13.0),List.of(0.55,80.0,17.0),List.of(0.8,90.0,23.0))) {
+            var actual=first.layers().stream().filter(layer->expected.get(0)<layer.get(0)).findFirst().orElseThrow();
+            assertEquals(expected.get(1),actual.get(1));assertEquals(expected.get(2),actual.get(2));
+        }
+        assertTrue(first.fractures().stream().allMatch(fracture->fracture.get(3)==41));
+        InputPreparation.verifyCurrentInputs(prepared.inputs(),temp,generated.generation());
+        InputPreparation.verifySnapshot(ModelInputs.restoreSnapshot(destination));
     }
     @Test void correctedLayerBoundariesProfilesBackupsAndIdempotentRegeneration()throws Exception {
         Path destination=setup();Path first=destination.resolve("Card_001_ang_model.txt");String original=Files.readString(first);

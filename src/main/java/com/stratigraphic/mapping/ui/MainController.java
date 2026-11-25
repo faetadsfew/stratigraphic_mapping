@@ -6,6 +6,8 @@ import com.stratigraphic.mapping.chart.ThreeDChart;
 import com.stratigraphic.mapping.chart.WallLineUnfoldChart;
 import com.stratigraphic.mapping.model.StratumModel;
 import com.stratigraphic.mapping.reader.StratumModelReader;
+import com.stratigraphic.mapping.simulation.SliceGenerationService;
+import javafx.concurrent.Task;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;
@@ -77,6 +79,9 @@ public final class MainController {
     private FitPane wallFitPane;
     private ThreeDChart threeDChart;
     private WallChartState.Snapshot wallSnapshot;
+    private WallChartState.Generation sliceGeneration;
+    private final SliceGenerationService sliceGenerationService = new SliceGenerationService();
+    private Task<SliceGenerationService.Result> sliceGenerationTask;
 
     @FXML
     private void initialize() {
@@ -84,6 +89,7 @@ public final class MainController {
         appRoot.sceneProperty().addListener((observable, previous, current) -> {
             if (current != null) {
                 WallChartState.in(current).set(wallSnapshot);
+                WallChartState.generationIn(current).set(sliceGeneration);
             }
         });
 
@@ -111,7 +117,7 @@ public final class MainController {
                 wrapWithHeader("井壁展开图（彩色）", "UNFOLD", wallChartBox));
 
         parameterPane.setOnOpenFile(this::openFile);
-        parameterPane.setOnConfirmData(this::generateCharts);
+        parameterPane.setOnConfirmData(this::generateChartsAndSlices);
         parameterPane.setOnDataChanged(this::refreshStatus);
 
         showColorChartHint();
@@ -198,14 +204,43 @@ public final class MainController {
     }
 
     private void generateCharts() {
+        StratumModel model = readModel();
+        if (model != null) {
+            renderCharts(model);
+        }
+    }
 
-        StratumModel model;
-        try {
-            model = parameterPane.toModel();
-        } catch (IllegalArgumentException ex) {
-            error(ex.getMessage());
+    private void generateChartsAndSlices() {
+        if (sliceGenerationTask != null && sliceGenerationTask.isRunning()) {
+            error("192 份切片正在生成，请完成后再生成新模型");
             return;
         }
+        StratumModel model = readModel();
+        if (model == null) {
+            return;
+        }
+        renderCharts(model);
+        ParameterPane.UnfoldInterval interval;
+        try {
+            interval = parameterPane.toUnfoldInterval();
+        } catch (IllegalArgumentException ex) {
+            publishSliceGeneration(new WallChartState.Generation(wallSnapshot, null, WallChartState.Status.FAILED, ex.getMessage()));
+            error("图表已更新；192 份切片未生成：" + ex.getMessage());
+            return;
+        }
+        startSliceGeneration(model, interval);
+    }
+
+    private StratumModel readModel() {
+        try {
+            return parameterPane.toModel();
+        } catch (IllegalArgumentException ex) {
+            error(ex.getMessage());
+            return null;
+        }
+    }
+
+    private void renderCharts(StratumModel model) {
 
         drawColorChart(model);
         updateStatus(model);
@@ -228,6 +263,46 @@ public final class MainController {
             showThreeDChartHint();
             error("三维图未生成：" + ex.getMessage());
         }
+    }
+
+    private void startSliceGeneration(StratumModel model, ParameterPane.UnfoldInterval interval) {
+        if (sliceGenerationTask != null && sliceGenerationTask.isRunning()) {
+            error("192 份切片正在生成，请稍候再试");
+            return;
+        }
+        Task<SliceGenerationService.Result> task = new Task<>() {
+            @Override
+            protected SliceGenerationService.Result call() throws IOException {
+                return sliceGenerationService.generate(model, interval.start(), interval.end());
+            }
+        };
+        sliceGenerationTask = task;
+        WallChartState.Snapshot generatedSnapshot = wallSnapshot;
+        publishSliceGeneration(new WallChartState.Generation(generatedSnapshot, null, WallChartState.Status.GENERATING, "正在生成当前模型切片"));
+        task.setOnRunning(event -> info("图表已更新；正在用当前模型生成 192 份切片…"));
+        task.setOnSucceeded(event -> {
+            SliceGenerationService.Result result = task.getValue();
+            publishSliceGeneration(new WallChartState.Generation(generatedSnapshot, result.generation(), WallChartState.Status.READY, "当前切片已就绪"));
+            String backup = result.backup() == null
+                    ? "（没有旧切片需要备份）"
+                    : "；旧数据已备份至 " + result.backup();
+            info("192 份切片已生成至 " + result.output() + backup);
+        });
+        task.setOnFailed(event -> {
+            publishSliceGeneration(new WallChartState.Generation(generatedSnapshot, null, WallChartState.Status.FAILED, rootMessage(task.getException())));
+            error("图表已更新；切片生成失败，旧数据已恢复：" + rootMessage(task.getException()));
+        });
+        Thread thread = new Thread(task, "slice-generation");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private static String rootMessage(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 
     private void drawWallChart(StratumModel model) {
@@ -390,6 +465,13 @@ public final class MainController {
         wallFitPane = null;
         publishWallChart(null);
         statusWall.setText("展开 A/B —");
+    }
+
+    private void publishSliceGeneration(WallChartState.Generation generation) {
+        sliceGeneration = generation;
+        if (appRoot.getScene() != null) {
+            WallChartState.generationIn(appRoot.getScene()).set(generation);
+        }
     }
 
     private void publishWallChart(WallChartState.Snapshot snapshot) {

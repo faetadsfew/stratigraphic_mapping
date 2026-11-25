@@ -20,6 +20,7 @@ import javafx.scene.paint.Color;
 import javafx.stage.*;
 import javax.imageio.ImageIO;
 import java.io.*;
+import java.math.BigDecimal;
 import java.nio.file.*;
 import java.util.Locale;
 import java.util.List;
@@ -33,11 +34,14 @@ public final class WallUnfoldController {
     @FXML private StackPane amplitudeBox,phaseBox,wallChartBox;
     @FXML private Label statusMessage;
     @FXML private Button exportButton,resetButton;
-    private final Button loadButton=new Button("获得输入数据"),computeButton=new Button("计算输出数据"),plotButton=new Button("生成图片");
+    private final Button loadButton=new Button("获得输入数据"),computeButton=new Button("正演计算"),plotButton=new Button("井壁成像");
     private final ProgressBar[] progress={new ProgressBar(0),new ProgressBar(0),new ProgressBar(0)};
     private final Label[] messages={label("等待加载输入数据"),label("等待输入数据就绪"),label("等待生成图片")};
     private final Label resultInfo=label("暂无计算结果");
-    private final TextField samplingBegin=new TextField("0"),samplingStep=new TextField("1"),samplingEnd=new TextField("1.5");
+    private final TextField samplingBegin=new TextField("0"),samplingStep=new TextField("2.54"),samplingEnd=new TextField("1.5");
+    private final TextField frequencyMHz=new TextField("2.5"),caliperInches=new TextField("8"),oilFilmThickness=new TextField("0.005");
+    private final TextField mudCakeResistivity=new TextField("1000"),mudCakePermittivity=new TextField("6");
+    private final TextField mudResistivityDisplay=new TextField("100"),mudPermittivityDisplay=new TextField("10");
     private final Button stopButton=new Button("停止计算");
     private final Button pauseButton=new Button("暂停计算"),resumeBatchButton=new Button("继续所选计算");
     private final ListView<SimulationHistory.Entry> unfinishedBatches=new ListView<>();
@@ -61,6 +65,10 @@ public final class WallUnfoldController {
     private final ResponseViewport wallViewport=new ResponseViewport();
     private final ChangeListener<WallChartState.Snapshot> wallStateListener=(observable,previous,current)->showWallChart(current);
     private ObjectProperty<WallChartState.Snapshot> wallState;
+    private ObjectProperty<WallChartState.Generation> generationState;
+    private volatile WallChartState.Generation sliceGeneration;
+    private volatile long inputRevision;
+    private final ChangeListener<WallChartState.Generation> generationListener=(observable,previous,current)->generationChanged(current);
     private WallChartState.Snapshot wallSnapshot;
     private WallResistivityChart wallChart;
     private ModelInputs inputs;
@@ -83,6 +91,12 @@ public final class WallUnfoldController {
                 wallState=shared;wallState.addListener(wallStateListener);
             }
             showWallChart(shared.get());
+            ObjectProperty<WallChartState.Generation> generations=WallChartState.generationIn(current);
+            if(generationState!=generations) {
+                if(generationState!=null)generationState.removeListener(generationListener);
+                generationState=generations;generationState.addListener(generationListener);
+            }
+            generationChanged(generations.get());
         });
         computeButton.setDisable(true); applyColors.setDisable(true);statusMessage.getStyleClass().add("msg");
         statusMessage.setMinWidth(0);statusMessage.setWrapText(false);
@@ -93,19 +107,25 @@ public final class WallUnfoldController {
         ColumnConstraints samplingLabel=new ColumnConstraints();samplingLabel.setPercentWidth(55);
         ColumnConstraints samplingValue=new ColumnConstraints();samplingValue.setPercentWidth(45);
         samplingGrid.getColumnConstraints().addAll(samplingLabel,samplingValue);
-        TextField[] samplingFields={samplingBegin,samplingStep,samplingEnd};
-        String[] samplingNames={"起测点 (m)","采样间距 (mm)","停止点 (m)"};
-        String[] samplingIds={"samplingBegin","samplingStep","samplingEnd"};
-        for(int i=0;i<3;i++) {
+        loadInputParameterDefaults(inputDirectory);
+        TextField[] samplingFields={samplingBegin,samplingStep,samplingEnd,frequencyMHz,caliperInches,oilFilmThickness,mudCakeResistivity,mudCakePermittivity,mudResistivityDisplay,mudPermittivityDisplay};
+        String[] samplingNames={"起测点 (m)","采样间距 (mm)","停止点 (m)","频率 (MHz)","井径 (in)","油膜厚度 (m)","泥饼电阻率 (Ω·m)","泥饼介电常数","泥浆电阻率 (Ω·m)","泥浆介电常数"};
+        String[] samplingIds={"samplingBegin","samplingStep","samplingEnd","frequencyMHz","caliperInches","oilFilmThickness","mudCakeResistivity","mudCakePermittivity","mudResistivity","mudPermittivity"};
+        for(int i=0;i<samplingFields.length;i++) {
             TextField field=samplingFields[i];field.setId(samplingIds[i]);field.setMinWidth(0);field.setPrefColumnCount(6);field.setMaxWidth(Double.MAX_VALUE);
             samplingGrid.add(label(samplingNames[i]),0,i);samplingGrid.add(field,1,i);
+            if(i>=8) continue;
             field.textProperty().addListener((observable,oldValue,newValue)->{
-                inputs=null;computeButton.setDisable(true);messages[0].setText("采样参数已更改，请重新获得输入数据");
+                invalidateInputs("输入参数已更改，请重新获得输入数据",true);
             });
+        }
+        for(TextField field:new TextField[]{mudResistivityDisplay,mudPermittivityDisplay}) {
+            field.setEditable(false);field.setFocusTraversable(false);
+            field.setTooltip(new Tooltip("仅用于页面展示，不读取或写入计算输入文件"));
         }
         samplingStep.setTooltip(new Tooltip("大于 0，最大 2.54 mm；不能整除计算区间时，略减间距以包含两个端点，并显示实际值"));
         samplingGrid.setPadding(new Insets(6));samplingGrid.setStyle("-fx-border-color: #d8e1ea; -fx-border-radius: 4;");
-        sections[0].getChildren().addAll(samplingGrid,label("间距 ≤ 2.54 mm；区间外按各电极端点延拓。"));
+        sections[0].getChildren().add(samplingGrid);
         for(int index=0;index<sections.length;index++) sections[index].setId("imagingStep"+(index+1));
         form.getChildren().addAll(sections[0],new Separator(),sections[1],new Separator(),sections[2]);
         Button[] buttons={loadButton,computeButton,plotButton};
@@ -120,7 +140,7 @@ public final class WallUnfoldController {
         calculationButtons.visibleProperty().bind(stopButton.visibleProperty());calculationButtons.managedProperty().bind(calculationButtons.visibleProperty());
         parallelism.setId("parallelism");parallelism.setPrefWidth(85);
         parallelismSettings.setId("parallelismSettings");
-        parallelism.setTooltip(new Tooltip("默认使用本机可用逻辑处理器数；运行期间保持显示，结束后可调整"));
+        parallelism.setTooltip(new Tooltip("默认使用本机可用逻辑处理器数，最多可选 192 个同时计算通道；请根据处理器和内存调整，通道数不代表物理核心数"));
         for(int i=0;i<3;i++) {
             progress[i].setId(new String[]{"inputProgress","calculationProgress","resultProgress"}[i]);
             messages[i].setId(new String[]{"inputMessage","calculationMessage","resultMessage"}[i]);
@@ -162,8 +182,24 @@ public final class WallUnfoldController {
         refreshHistory();
     }
     private static Label label(String text) {Label l=new Label(text);l.setWrapText(true);l.setMinWidth(0);return l;}
+    private static String plain(double value) {
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
+    }
+    private void loadInputParameterDefaults(Path directory) {
+        if(!Files.isDirectory(directory)) return;
+        try(var files=Files.list(directory)) {
+            Path first=files.filter(Files::isRegularFile)
+                .filter(path->path.getFileName().toString().matches("(?i)Card_\\d{3}.*\\.txt"))
+                .sorted().findFirst().orElse(null);
+            if(first==null)return;
+            var model=ModelInputs.parse(Files.readString(first));
+            frequencyMHz.setText(plain(model.frequency()/1_000_000));caliperInches.setText(plain(model.diameterInches()));
+            oilFilmThickness.setText(plain(model.offset()));mudCakeResistivity.setText(plain(model.mudRho()));mudCakePermittivity.setText(plain(model.mudEps()));
+        } catch(IOException|IllegalArgumentException ignored) { }
+    }
     private void showWallChart(WallChartState.Snapshot snapshot) {
         if(wallSnapshot==snapshot) return;
+        invalidateInputs("第一页模型已更新，请重新获得输入数据并正演计算",true);
         wallSnapshot=snapshot;
         if(wallChart!=null) wallChart.dispose();
         wallChart=null;wallViewport.reset();
@@ -174,7 +210,34 @@ public final class WallUnfoldController {
             wallChart=new WallResistivityChart(snapshot.model(),snapshot.pointA(),snapshot.pointB(),wallViewport);
             wallChartBox.getChildren().setAll(wallChart);
         }
+        controls();
         updateChartButtons();
+    }
+    private boolean slicesReady() {
+        WallChartState.Generation generation=sliceGeneration;
+        if(generation==null)return wallSnapshot==null;
+        return generation.status()==WallChartState.Status.READY&&generation.id()!=null&&generation.snapshot()==wallSnapshot;
+    }
+    private void generationChanged(WallChartState.Generation generation) {
+        if(sliceGeneration==generation)return;
+        sliceGeneration=generation;
+        String message=generation==null?"请先在第一页生成当前模型切片":generation.message();
+        invalidateInputs(message+"；请重新获得输入数据",false);
+    }
+    private void invalidateInputs(String message,boolean clearResult) {
+        inputRevision++;
+        inputs=null;
+        if(calculationControl!=null)calculationControl.stop();
+        if(!messages[0].textProperty().isBound())messages[0].setText(message);
+        if(clearResult) {
+            if(amplitudeChart!=null)amplitudeChart.dispose();
+            if(phaseChart!=null)phaseChart.dispose();
+            amplitudeChart=null;phaseChart=null;result=null;computedResult=null;
+            amplitudeBox.getChildren().clear();phaseBox.getChildren().clear();
+            resultInfo.setText("模型或输入已更新，请重新正演计算");
+            applyColors.setDisable(true);updateChartButtons();
+        }
+        controls();
     }
     private void updateChartButtons() {
         boolean empty=result==null&&wallChart==null;
@@ -186,33 +249,48 @@ public final class WallUnfoldController {
     private void chooseInput() {
         DirectoryChooser chooser=new DirectoryChooser();chooser.setTitle("选择包含 Card_001～Card_192 的输入目录");
         if(Files.isDirectory(inputDirectory)) chooser.setInitialDirectory(inputDirectory.toFile());
-        File selected=chooser.showDialog(window());if(selected!=null) {inputDirectory=selected.toPath();loadInputs();}
+        File selected=chooser.showDialog(window());if(selected!=null) {inputDirectory=selected.toPath();loadInputParameterDefaults(inputDirectory);loadInputs();}
     }
     private void loadInputs() {
         if(busy) return;
+        if(!slicesReady()){error("当前模型切片尚未生成成功，请先在第一页完成生成");return;}
+        final long revision=inputRevision;
+        final String generation=sliceGeneration==null?null:sliceGeneration.id();
         final double begin,stepMm,end;
+        final SamplingPlan.InputParameters inputParameters;
         try {
             begin=Double.parseDouble(samplingBegin.getText().trim());stepMm=Double.parseDouble(samplingStep.getText().trim());end=Double.parseDouble(samplingEnd.getText().trim());
             if(!Double.isFinite(begin)||!Double.isFinite(end)||!Double.isFinite(stepMm)||stepMm<=0||stepMm>2.54||begin>=end)
                 throw new IllegalArgumentException("起测点应小于停止点；采样间距必须大于 0 且不超过 2.54 毫米，所有参数须为有限数字");
-        } catch(IllegalArgumentException ex) {error("采样参数无效："+ex.getMessage());return;}
+            double frequency=Double.parseDouble(frequencyMHz.getText().trim())*1_000_000;
+            inputParameters=new SamplingPlan.InputParameters(frequency,Double.parseDouble(caliperInches.getText().trim()),
+                Double.parseDouble(oilFilmThickness.getText().trim()),Double.parseDouble(mudCakeResistivity.getText().trim()),
+                Double.parseDouble(mudCakePermittivity.getText().trim()));
+        } catch(IllegalArgumentException ex) {error("输入参数无效："+ex.getMessage());return;}
         boolean convertedFromSlices=inputDirectory.toAbsolutePath().normalize().equals(workspaceRoot.resolve("192_NGI_Input").toAbsolutePath().normalize());
         if(!convertedFromSlices&&!Files.isDirectory(inputDirectory)) {error("输入目录不可用："+inputDirectory+"。请重新选择目录。");chooseInput();return;}
         inputs=null;computeButton.setDisable(true);
         Task<ModelInputs> task=new Task<>() {
             @Override protected ModelInputs call() throws Exception {
                 Path cache=Path.of(System.getProperty("java.io.tmpdir"),"stratigraphic-input-cache");
-                ModelInputs original;
+                ModelInputs sampled;
                 if(convertedFromSlices) {
-                    updateMessage("正在从原始切片转换并校验输入…");
-                    var prepared=InputPreparation.regenerate(workspaceRoot,cache,(done,message)->{updateProgress(done,384);updateMessage(message);});
-                    original=prepared.inputs();
-                } else original=ModelInputs.load(inputDirectory,cache,(n,s)->{updateProgress(n,192);updateMessage(s);});
-                updateMessage("正在应用采样参数并校验计算快照…");updateProgress(ProgressIndicator.INDETERMINATE_PROGRESS,1);
-                return SamplingPlan.prepare(original,cache,begin,stepMm,end);
+                    updateMessage("正在转换切片、应用采样参数并保存本次计算输入…");
+                    var prepared=InputPreparation.prepareForCalculation(workspaceRoot,cache,begin,stepMm,end,inputParameters,
+                            (done,message)->{updateProgress(done,384);updateMessage(message);});
+                    sampled=prepared.inputs();
+                } else {
+                    ModelInputs original=ModelInputs.load(inputDirectory,cache,(n,s)->{updateProgress(n,192);updateMessage(s);});
+                    updateMessage("正在应用采样参数并校验计算快照…");updateProgress(ProgressIndicator.INDETERMINATE_PROGRESS,1);
+                    sampled=SamplingPlan.prepare(original,cache,begin,stepMm,end,inputParameters);
+                }
+                InputPreparation.verifyCurrentInputs(sampled,workspaceRoot,generation);
+                if(inputRevision!=revision)throw new IOException("模型或输入参数已改变，请重新获得输入数据");
+                return sampled;
             }
         };
         runTask(task,0,value->{
+            if(inputRevision!=revision||!slicesReady()){inputs=null;messages[0].setText("模型或参数已更新，已丢弃旧输入，请重新获得输入数据");return;}
             inputs=value;var model=value.cards().get(0).model();
             messages[0].setText("已加载并校验 192/192 · 计算 MD："+model.begin()+"～"+model.end()+" m · 实际间距："+String.format(Locale.ROOT,"%.9g",model.step()*1000)+" mm"
                 +(Math.abs(model.step()-stepMm/1000)>1e-12?"（为包含起止点已调整）":""));
@@ -223,8 +301,10 @@ public final class WallUnfoldController {
         startComputation(null);
     }
     private void startComputation(Path batch) {
-        if(busy||(batch==null&&inputs==null))return;
+        if(busy||(batch==null&&(inputs==null||!slicesReady())))return;
         ModelInputs snapshot=inputs;
+        final long revision=inputRevision;
+        final String generation=sliceGeneration==null?null:sliceGeneration.id();
         int concurrentChannels=parallelism.getValue();
         var control=new ParallelSimulationRunner.Control();calculationControl=control;
         stopButton.setDisable(false);stopButton.setVisible(true);pauseButton.setText("暂停计算");pauseButton.setDisable(false);
@@ -235,6 +315,8 @@ public final class WallUnfoldController {
                     double fraction=p.fraction();
                     updateProgress(fraction==0&&!p.paused()?ProgressIndicator.INDETERMINATE_PROGRESS:fraction,1);updateMessage(p.message());
                 };
+                if(batch==null)InputPreparation.verifyCurrentInputs(snapshot,workspaceRoot,generation);
+                if(inputRevision!=revision)throw new IOException("模型或输入已更新，未启动旧输入计算，请重新获得输入数据");
                 var runner=new ParallelSimulationRunner();
                 var outcome=batch==null?runner.run(snapshot,workspaceRoot,workspaceRoot.resolve("output"),192,concurrentChannels,display,control):
                     runner.resume(batch,workspaceRoot,concurrentChannels,display,control);
@@ -242,7 +324,10 @@ public final class WallUnfoldController {
                 return new Computed(outcome,ResponseData.read(outcome.result(),(a,b)->{}));
             }
         };
-        runTask(task,1,value->{acceptComputedResult(value.data());messages[1].setText("已完成 192/192，结果已保存 · "+computedResult);messages[2].setText("结果已保存，可生成图片");setStatus("计算完成，结果已保存，可点击「生成图片」 · 文件来自："+computedResult);});
+        runTask(task,1,value->{
+            if(inputRevision!=revision){setStatus("模型或参数已更新，旧批次结果仅保存在历史记录，不作为当前模型结果");return;}
+            acceptComputedResult(value.data());messages[1].setText("已完成 192/192，结果已保存 · "+computedResult);messages[2].setText("结果已保存，可生成图片");setStatus("计算完成，结果已保存，可点击「井壁成像」 · 文件来自："+computedResult);
+        });
     }
     private void refreshHistory() {
         int revision=++historyRevision;
@@ -336,7 +421,7 @@ public final class WallUnfoldController {
             unbind(index);if(progress[index].getProgress()<0)progress[index].setProgress(0);busy=false;finishCompute(index);
             if(index==1&&task.getException() instanceof SimulationRunner.StoppedException) {
                 messages[index].setText("计算已停止，已完成电极已保存，可从历史记录选择继续");setStatus(task.getException().getMessage());
-            } else {messages[index].setText(firstLine(task.getException().getMessage())+"（见错误详情）");error(task.getException().getMessage());}
+            } else {if(index==1)inputs=null;messages[index].setText(firstLine(task.getException().getMessage())+"（见错误详情）");error(task.getException().getMessage());}
             controls();
         });
         Thread thread=new Thread(task,"imaging-task");thread.setDaemon(true);thread.start();
@@ -344,8 +429,8 @@ public final class WallUnfoldController {
     private void unbind(int index) {progress[index].progressProperty().unbind();messages[index].textProperty().unbind();}
     private void finishCompute(int index) {if(index==1){stopButton.setVisible(false);calculationControl=null;refreshHistory();}}
     private void controls() {
-        samplingBegin.setDisable(busy);samplingStep.setDisable(busy);samplingEnd.setDisable(busy);
-        loadButton.setDisable(busy);computeButton.setDisable(busy||inputs==null);plotButton.setDisable(busy);parallelism.setDisable(busy);applyColors.setDisable(busy||result==null);
+        for(TextField field:new TextField[]{samplingBegin,samplingStep,samplingEnd,frequencyMHz,caliperInches,oilFilmThickness,mudCakeResistivity,mudCakePermittivity,mudResistivityDisplay,mudPermittivityDisplay})field.setDisable(busy);
+        loadButton.setDisable(busy||!slicesReady());computeButton.setDisable(busy||inputs==null||!slicesReady());plotButton.setDisable(busy);parallelism.setDisable(busy);applyColors.setDisable(busy||result==null);
         historyPane.setDisable(busy);
         var selected=unfinishedBatches.getSelectionModel().getSelectedItem();
         resumeBatchButton.setDisable(busy||selected==null||!selected.resumable());

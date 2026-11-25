@@ -13,6 +13,15 @@ import javafx.stage.Stage;
 
 import java.io.IOException;
 
+/**
+ * 程序入口：装配主窗口，启动时直接最大化铺满可视区。
+ *
+ * <p>尺寸不写死：还原尺寸取「理想尺寸」和「所在屏幕可视区的 92%」里小的那个，
+ * 最小尺寸也不会超过还原尺寸，所以在小屏、2K/4K 屏、带系统缩放的屏上都不会被顶出可视区。
+ * 窗口开在鼠标所在的那块屏上，多显示器时不用手动搬。
+ *
+ * <p>按 F11 切真全屏（连任务栏一起盖住），Esc 退出全屏。
+ */
 public class StratigraphicMappingApplication extends Application {
 
     /** 屏幕够大时「还原」用的理想尺寸；屏幕不够大就按比例缩。 */

@@ -1,5 +1,6 @@
 package com.stratigraphic.mapping.model;
 
+import java.util.DoubleSummaryStatistics;
 import java.util.List;
 
 /**
@@ -147,9 +148,6 @@ public final class StratumModel {
         check(Double.isFinite(dipAngle) && dipAngle > 0 && dipAngle < 180,
                 "统一倾角必须在 0° 与 180° 之间");
 
-        check(!interfaces.isEmpty(),
-                "至少需要 1 条界面");
-
         check(interfaces.size() <= MAX_INTERFACES,
                 "界面最多 " + MAX_INTERFACES + " 条，实际给了 " + interfaces.size() + " 条");
 
@@ -285,14 +283,49 @@ public final class StratumModel {
         return resistivities.get(layer);
     }
 
-    /** 最浅界面的深度 (m)。 */
+    /** 最浅界面深度；无界面时使用异常体范围 (m)。 */
     public double minDepth() {
-        return interfaces.stream().mapToDouble(StratumInterface::depth).min().orElse(0);
+        return interfaces.stream().mapToDouble(StratumInterface::depth).min()
+                .orElseGet(() -> unlayeredDepths().getMin());
     }
 
-    /** 最深界面的深度 (m)。 */
+    /** 最深界面深度；无界面时使用异常体范围 (m)。 */
     public double maxDepth() {
-        return interfaces.stream().mapToDouble(StratumInterface::depth).max().orElse(0);
+        return interfaces.stream().mapToDouble(StratumInterface::depth).max()
+                .orElseGet(() -> unlayeredDepths().getMax());
+    }
+
+    private DoubleSummaryStatistics unlayeredDepths() {
+        DoubleSummaryStatistics depths = new DoubleSummaryStatistics();
+        for (Fracture fracture : fractures) {
+            double elevation = Math.toRadians(fracture.normalizedElevationDeg());
+            double halfHeight = Math.abs(Math.cos(elevation)) < 1e-9
+                    ? 0 : Math.abs(wellRadius * Math.tan(elevation));
+            depths.accept(fracture.depth() - halfHeight);
+            depths.accept(fracture.depth() + halfHeight);
+        }
+        for (SphereFracture sphere : sphereFractures) {
+            depths.accept(sphere.centerDepth() - sphere.radius());
+            depths.accept(sphere.centerDepth() + sphere.radius());
+        }
+        for (CubeAnomaly cube : cubeAnomalies) {
+            depths.accept(cube.centerDepth() - cube.halfSide());
+            depths.accept(cube.centerDepth() + cube.halfSide());
+        }
+        for (WedgeFracture wedge : wedgeFractures) {
+            depths.accept(wedge.vertexDepth());
+            depths.accept(wedge.leftDepth());
+            depths.accept(wedge.rightDepth());
+        }
+        for (SurfaceText text : surfaceTexts) {
+            depths.accept(text.centerDepth() - text.depthSpanM() / 2);
+            depths.accept(text.centerDepth() + text.depthSpanM() / 2);
+        }
+        if (depths.getCount() == 0) {
+            depths.accept(0);
+            depths.accept(1);
+        }
+        return depths;
     }
 
     /** 全部电阻率里的最大值（含井眼、地层和裂缝），用来定统一色标范围。 */

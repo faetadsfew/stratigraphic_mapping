@@ -485,20 +485,14 @@ public final class StratumModelReader {
                 break;
             }
             if (raw.stripLeading().startsWith("%") && raw.contains("=====")) {
-                if (!rows.isEmpty()) {
-                    break;
-                }
-                continue;
+                break;
             }
             String text = stripComment(raw).trim();
             if (text.isEmpty()) {
                 continue;
             }
             if (isSeparator(text)) {
-                if (!rows.isEmpty()) {
-                    break;
-                }
-                continue;
+                break;
             }
             try {
                 rows.add(parseNumericRow(text));
@@ -571,15 +565,15 @@ public final class StratumModelReader {
         return out;
     }
 
-    /** 解析界面个数 n：必须是 1 ~ {@link StratumModel#MAX_INTERFACES} 之间的整数。 */
+    /** 解析界面个数 n：必须是 0 ~ {@link StratumModel#MAX_INTERFACES} 之间的整数。 */
     private static int parseCount(String value, int lineNo) {
 
         double v = parseNumber(value, lineNo, "界面个数 n");
 
         if (!Double.isFinite(v) || v != Math.rint(v)
-                || v < 1 || v > StratumModel.MAX_INTERFACES) {
+                || v < 0 || v > StratumModel.MAX_INTERFACES) {
             throw new IllegalArgumentException(
-                    "第 " + lineNo + " 行：界面个数 n 需要是 1 ~ "
+                    "第 " + lineNo + " 行：界面个数 n 需要是 0 ~ "
                             + StratumModel.MAX_INTERFACES + " 之间的整数");
         }
         return (int) v;

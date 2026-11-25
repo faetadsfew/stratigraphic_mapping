@@ -14,6 +14,7 @@ public final class InputPreparation {
     public record Settings(double frequency,double diameter,double offset,double mudRho,double mudEps,double layerEps,
                            Path source,Path destination,Path script,Path checker) { }
     public record Prepared(ModelInputs inputs,int updated,Path backup) { }
+    private record CalculationSampling(double begin,double stepMm,double end,SamplingPlan.InputParameters parameters) { }
     private record Converted(int electrode,String name,String text,ModelInputs.Model slice,ModelInputs.Model model,byte[] sourceBytes) { }
 
     public static Settings settings(Path root)throws IOException {
@@ -63,16 +64,25 @@ public final class InputPreparation {
         return resolved;
     }
     static String convert(ModelInputs.Model slice,Settings settings) {
+        return convertMaterials(slice,settings,null);
+    }
+    static String convert(ModelInputs.Model slice,Settings settings,SliceMaterials.Data materials,int electrode)throws IOException {
+        return convertMaterials(slice,settings,materials==null?null:materials.fractures(electrode,slice.fractures().size()));
+    }
+    private static String convertMaterials(ModelInputs.Model slice,Settings settings,List<Double> fracturePermittivities) {
         StringBuilder text=new StringBuilder();
         row(text,settings.frequency(),settings.diameter());row(text,settings.offset(),settings.mudRho(),settings.mudEps());
         row(text,slice.begin(),slice.step(),slice.end());text.append(slice.layers().size()).append('\n');
         for(int index=0;index<slice.layers().size();index++) {
             var layer=slice.layers().get(index);
             double boundary=index+1<slice.layers().size()?slice.layers().get(index+1).get(0):layer.get(0)+1;
-            row(text,boundary,layer.get(1),settings.layerEps());
+            row(text,boundary,layer.get(1),fracturePermittivities==null?settings.layerEps():layer.get(2));
         }
         text.append(slice.fractures().size()).append('\n');
-        for(var fracture:slice.fractures())row(text,fracture.get(0),0,fracture.get(2),settings.layerEps(),fracture.get(4));
+        for(int index=0;index<slice.fractures().size();index++) {
+            var fracture=slice.fractures().get(index);
+            row(text,fracture.get(0),0,fracture.get(2),fracturePermittivities==null?settings.layerEps():fracturePermittivities.get(index),fracture.get(4));
+        }
         return text.toString();
     }
     private static void row(StringBuilder text,double... values) {
@@ -83,10 +93,13 @@ public final class InputPreparation {
         text.append('\n');
     }
     static void validate(ModelInputs.Model slice,ModelInputs.Model actual,Settings settings,String name)throws IOException {
-        ModelInputs.Model expected=ModelInputs.parse(convert(slice,settings));
+        validate(slice,actual,settings,name,null,0);
+    }
+    static void validate(ModelInputs.Model slice,ModelInputs.Model actual,Settings settings,String name,SliceMaterials.Data materials,int electrode)throws IOException {
+        ModelInputs.Model expected=ModelInputs.parse(convert(slice,settings,materials,electrode));
         if(!expected.equals(actual)) {
             String reason=!expected.layers().equals(actual.layers())?"层界面/电阻率对应关系不一致；应使用下一层起点作为当前层界面，末层界面为末层起点+1 m":
-                !expected.fractures().equals(actual.fractures())?"裂缝位置、电阻率、张开度、0° 倾角或介电常数与 call.m 不一致":"频率、井径、泥浆参数或深度采样参数与 call.m/原始切片不一致";
+                !expected.fractures().equals(actual.fractures())?"裂缝位置、电阻率、张开度、0° 倾角或介电常数与 call.m 不一致":"频率、井径、泥饼参数或深度采样参数与 call.m/原始切片不一致";
             throw new IOException(name+"："+reason+"。请修改原始切片或 call.m 参数后重新获得输入数据。");
         }
         int points=pointCount(slice);
@@ -111,7 +124,7 @@ public final class InputPreparation {
         if(!Double.isFinite(points)||points>2_000_000)throw new IOException("深度采样点数超过 200 万，请检查采样间隔与深度范围");
         return (int)points;
     }
-    private static List<Converted> prepare(Settings settings,BiConsumer<Integer,String> progress)throws IOException {
+    private static List<Converted> prepare(Settings settings,SliceMaterials.Data materials,BiConsumer<Integer,String> progress)throws IOException {
         var indexed=ModelInputs.indexFiles(settings.source());var cards=new ArrayList<Converted>();var errors=new ArrayList<String>();
         ModelInputs.Model reference=null;
         for(var entry:indexed.entrySet()) {
@@ -121,8 +134,8 @@ public final class InputPreparation {
                 ModelInputs.Model slice=ModelInputs.parse("1 1\n0 1 1\n"+new String(sourceBytes,java.nio.charset.StandardCharsets.UTF_8));
                 if(reference!=null&&(Double.compare(slice.begin(),reference.begin())!=0||Double.compare(slice.step(),reference.step())!=0||Double.compare(slice.end(),reference.end())!=0))
                     throw new IOException("深度范围/采样间隔与 "+cards.get(0).name()+" 不一致");
-                String text=convert(slice,settings);ModelInputs.Model model=ModelInputs.parse(text);
-                validate(slice,model,settings,name);
+                String text=convert(slice,settings,materials,entry.getKey());ModelInputs.Model model=ModelInputs.parse(text);
+                validate(slice,model,settings,name,materials,entry.getKey());
                 cards.add(new Converted(entry.getKey(),name,text,slice,model,sourceBytes));reference=slice;
             }catch(IllegalArgumentException|IOException error){errors.add(name+"："+error.getMessage());}
             progress.accept(entry.getKey(),"已检查原始切片 "+entry.getKey()+"/192 · "+name);
@@ -131,6 +144,13 @@ public final class InputPreparation {
         return List.copyOf(cards);
     }
     public static Prepared regenerate(Path root,Path cacheRoot,BiConsumer<Integer,String> progress)throws IOException {
+        return regenerate(root,cacheRoot,progress,null);
+    }
+    public static Prepared prepareForCalculation(Path root,Path cacheRoot,double begin,double stepMm,double end,
+                                                SamplingPlan.InputParameters parameters,BiConsumer<Integer,String> progress)throws IOException {
+        return regenerate(root,cacheRoot,progress,new CalculationSampling(begin,stepMm,end,Objects.requireNonNull(parameters)));
+    }
+    private static Prepared regenerate(Path root,Path cacheRoot,BiConsumer<Integer,String> progress,CalculationSampling sampling)throws IOException {
         Settings settings=settings(root);
         Files.createDirectories(cacheRoot);
         Path transaction=Files.createTempDirectory(cacheRoot,"conversion-");
@@ -140,17 +160,26 @@ public final class InputPreparation {
             if(lock==null)throw new IOException("已有输入转换任务正在运行");
             try(lock) {
                 String scriptHash=SimulationHistory.sha256(settings.script()),checkerHash=SimulationHistory.sha256(settings.checker());
-                List<Converted> cards=prepare(settings,progress);
+                SliceMaterials.Data materials=SliceMaterials.read(settings.source());
+                Path modelRecord=root.resolve("NGI_PLOT_INP.txt");
+                if(materials==null&&Files.isRegularFile(modelRecord)&&Files.readString(modelRecord).contains("% slice_materials_version=1"))
+                    throw new IOException("当前模型的切片材料记录缺失，请在第一页重新生成切片");
+                List<Converted> cards=prepare(settings,materials,progress);
                 Path staged=Files.createDirectory(transaction.resolve("converted"));
                 for(var card:cards)Files.writeString(staged.resolve(card.name()),card.text(),StandardOpenOption.CREATE_NEW);
                 var manifest=new Properties();
-                manifest.setProperty("rule","next-layer-boundary-v1");manifest.setProperty("source",settings.source().toString());
+                manifest.setProperty("rule",materials==null?"next-layer-boundary-v1":SliceMaterials.RULE);manifest.setProperty("source",settings.source().toString());
+                if(materials!=null) {
+                    manifest.setProperty("materials.sha256",SimulationHistory.sha256(settings.source().resolve(SliceMaterials.FILE)));
+                    manifest.setProperty("generation",materials.generation());
+                }
                 manifest.setProperty("call.sha256",scriptHash);manifest.setProperty("transf.sha256",checkerHash);
                 manifest.setProperty("call.path",settings.script().toAbsolutePath().toString());manifest.setProperty("transf.path",settings.checker().toAbsolutePath().toString());
                 manifest.setProperty("validated.records",Long.toString((long)pointCount(cards.get(0).slice())*192));
                 manifest.setProperty("validation","192 electrodes: parameters and reconstructed resistivity profiles verified");
                 Path originals=Files.createDirectory(staged.resolve("conversion-source"));
                 Files.copy(settings.script(),originals.resolve("call.m"));Files.copy(settings.checker(),originals.resolve("transf.m"));
+                if(materials!=null)Files.copy(settings.source().resolve(SliceMaterials.FILE),originals.resolve(SliceMaterials.FILE));
                 for(var card:cards) {
                     Files.write(originals.resolve(card.name()),card.sourceBytes());
                     manifest.setProperty("slice.sha256."+card.electrode(),SimulationHistory.sha256(originals.resolve(card.name())));
@@ -164,7 +193,7 @@ public final class InputPreparation {
                 Set<String> names=new HashSet<>();cards.forEach(card->names.add(card.name()));
                 boolean stale=existing.stream().anyMatch(file->!names.contains(file.getFileName().toString()));
                 Path backup=null;
-                if(updated>0||stale) {
+                if(sampling==null&&(updated>0||stale)) {
                     Path backups=Files.createDirectories(root.resolve("input_backups"));
                     backup=Files.createDirectory(backups.resolve("NGI_"+LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))+"_"+UUID.randomUUID().toString().substring(0,8)));
                     for(Path file:existing)Files.copy(file,backup.resolve(file.getFileName()));
@@ -173,11 +202,15 @@ public final class InputPreparation {
                 }
                 try(var output=Files.newOutputStream(staged.resolve("conversion.properties"))){manifest.store(output,"Validated Java conversion from call.m and transf.m");}
                 ModelInputs verified=ModelInputs.load(staged,transaction.resolve("verification"),(done,message)->{});
-                for(int index=0;index<cards.size();index++)validate(cards.get(index).slice(),verified.cards().get(index).model(),settings,cards.get(index).name());
+                for(int index=0;index<cards.size();index++)validate(cards.get(index).slice(),verified.cards().get(index).model(),settings,cards.get(index).name(),materials,cards.get(index).electrode());
                 ModelInputs snapshot=ModelInputs.load(staged,cacheRoot,(done,message)->progress.accept(192+done,"已加载并校验 "+done+"/192"),settings.destination());
                 if(!scriptHash.equals(SimulationHistory.sha256(settings.script()))||!checkerHash.equals(SimulationHistory.sha256(settings.checker())))
                     throw new IOException("转换期间参考脚本发生变化，请重新获得输入数据；未替换原有输入。");
                 verifySnapshot(snapshot);
+                if(sampling!=null) {
+                    ModelInputs sampled=SamplingPlan.prepare(snapshot,cacheRoot,sampling.begin(),sampling.stepMm(),sampling.end(),sampling.parameters());
+                    return CalculationInputPublication.publish(root,settings.destination(),sampled);
+                }
                 publish(settings.destination(),staged,existing,cards,backup);
                 return new Prepared(snapshot,updated,backup);
             }
@@ -191,6 +224,7 @@ public final class InputPreparation {
         Path target=Files.createDirectory(inputs.directory().resolve("conversion-source"));
         Path source=Files.isDirectory(saved)?saved:Path.of(manifest.getProperty("conversion.source"));
         for(var card:inputs.cards())Files.copy(source.resolve(card.name()),target.resolve(card.name()));
+        if(manifest.containsKey("conversion.materials.sha256"))Files.copy(source.resolve(SliceMaterials.FILE),target.resolve(SliceMaterials.FILE));
         for(String name:List.of("call.m","transf.m")) {
             Path script=Files.isDirectory(saved)?saved.resolve(name):Path.of(manifest.getProperty("conversion."+name.replace(".m","")+".path",source.getParent().resolve(name).toString()));
             Files.copy(script,target.resolve(name));
@@ -203,6 +237,16 @@ public final class InputPreparation {
         if(manifest.containsKey("sampling.version")){SamplingPlan.verifySnapshot(inputs);return;}
         if(manifest.getProperty("conversion.rule")==null)return;
         Path provenance=inputs.directory().resolve("conversion-source");Settings settings=settings(provenance);
+        String rule=manifest.getProperty("conversion.rule");
+        if(!"next-layer-boundary-v1".equals(rule)&&!SliceMaterials.RULE.equals(rule))throw new IOException("不支持的转换快照版本，请重新获得输入数据");
+        SliceMaterials.Data materials=null;
+        if(SliceMaterials.RULE.equals(rule)) {
+            Path materialFile=provenance.resolve(SliceMaterials.FILE);
+            if(!Files.isRegularFile(materialFile)||!SimulationHistory.sha256(materialFile).equals(manifest.getProperty("conversion.materials.sha256")))
+                throw new IOException("输入快照的材料记录缺失或已被修改，请重新获得输入数据");
+            materials=SliceMaterials.read(provenance);
+            if(!materials.generation().equals(manifest.getProperty("conversion.generation")))throw new IOException("输入快照的切片版本不一致");
+        }
         if(!SimulationHistory.sha256(settings.script()).equals(manifest.getProperty("conversion.call.sha256"))
             ||!SimulationHistory.sha256(settings.checker()).equals(manifest.getProperty("conversion.transf.sha256")))throw new IOException("输入快照中的转换脚本校验失败，请重新获得输入数据");
         for(var card:inputs.cards()) {
@@ -211,7 +255,49 @@ public final class InputPreparation {
                 ||!SimulationHistory.sha256(card.snapshot()).equals(manifest.getProperty("conversion.converted.sha256."+card.id())))
                 throw new IOException(card.name()+"：输入快照或原始切片被修改，请重新获得输入数据");
             ModelInputs.Model slice=ModelInputs.parse("1 1\n0 1 1\n"+Files.readString(source));
-            validate(slice,ModelInputs.parse(Files.readString(card.snapshot())),settings,card.name());
+            validate(slice,ModelInputs.parse(Files.readString(card.snapshot())),settings,card.name(),materials,card.id());
+        }
+    }
+    public static void verifyCurrentInputs(ModelInputs inputs,Path root,String expectedGeneration)throws IOException {
+        verifySnapshot(inputs);
+        ModelInputs original=inputs;
+        Path sampled=inputs.directory().resolve("sampling-original");
+        if(Files.isDirectory(sampled))original=ModelInputs.restoreSnapshot(sampled);
+        Properties manifest=new Properties();
+        try(var input=Files.newInputStream(original.directory().resolve("inputs.properties"))){manifest.load(input);}
+        try(var channel=FileChannel.open(root.resolve("input-preparation.lock"),StandardOpenOption.CREATE,StandardOpenOption.WRITE)) {
+            FileLock lock;
+            try {lock=channel.tryLock();}catch(OverlappingFileLockException error){throw new IOException("切片或输入正在更新，请完成后重新获得输入数据",error);}
+            if(lock==null)throw new IOException("切片或输入正在更新，请完成后重新获得输入数据");
+            try(lock) {
+                if(manifest.getProperty("conversion.rule")==null) {
+                    if(expectedGeneration!=null)throw new IOException("当前输入不是本次第一页生成的切片，请重新获得输入数据");
+                    Path source=Path.of(manifest.getProperty("source"));
+                    for(var card:original.cards()) {
+                        Path current=source.resolve(card.name());
+                        if(!Files.isRegularFile(current)||Files.mismatch(current,card.snapshot())!=-1)
+                            throw new IOException(card.name()+" 已改变，请重新获得输入数据后再正演计算");
+                    }
+                    return;
+                }
+                Settings current=settings(root);
+                if(!SimulationHistory.sha256(current.script()).equals(manifest.getProperty("conversion.call.sha256"))
+                        ||!SimulationHistory.sha256(current.checker()).equals(manifest.getProperty("conversion.transf.sha256")))
+                    throw new IOException("输入转换参数已改变，请重新获得输入数据");
+                if(expectedGeneration!=null&&!expectedGeneration.equals(manifest.getProperty("conversion.generation")))
+                    throw new IOException("输入不属于本次第一页生成的模型，请重新获得输入数据");
+                Path materialFile=current.source().resolve(SliceMaterials.FILE);
+                String materialHash=manifest.getProperty("conversion.materials.sha256");
+                if((materialHash==null&&Files.exists(materialFile))||(materialHash!=null&&(!Files.isRegularFile(materialFile)
+                        ||!materialHash.equals(SimulationHistory.sha256(materialFile)))))
+                    throw new IOException("切片材料版本已改变，请重新获得输入数据");
+                var indexed=ModelInputs.indexFiles(current.source());
+                for(var card:original.cards()) {
+                    Path file=indexed.get(card.id());
+                    if(!file.getFileName().toString().equals(card.name())||!SimulationHistory.sha256(file).equals(manifest.getProperty("conversion.slice.sha256."+card.id())))
+                        throw new IOException(card.name()+" 的原始切片已改变，请重新获得输入数据后再正演计算");
+                }
+            }
         }
     }
     private static void publish(Path destination,Path staged,List<Path> existing,List<Converted> cards,Path backup)throws IOException {

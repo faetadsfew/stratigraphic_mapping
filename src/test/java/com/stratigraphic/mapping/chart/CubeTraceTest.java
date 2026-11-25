@@ -8,6 +8,23 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CubeTraceTest {
+    @Test
+    void sliceIntersectionMatchesTheDisplayedAngularBand() {
+        for (CubeAnomaly cube : java.util.List.of(
+                new CubeAnomaly(0.45, 210, 0.16, 0.14, 70),
+                new CubeAnomaly(0.45, 359, 0.1016, 0.08, 70),
+                new CubeAnomaly(0.45, 0, 0, 0.4, 70),
+                new CubeAnomaly(0.45, 45, 0.8, 0.02, 70),
+                new CubeAnomaly(0.45, 45, 0, 0.02, 70))) {
+            CubeTrace.Trace trace = CubeTrace.of(0.1016, cube);
+            for (int index = -192; index <= 384; index++) {
+                double angle = index * 360.0 / 192;
+                assertEquals(trace.contains(angle, cube.centerDepth()), cube.intersectsWellAt(0.1016, angle),
+                        "angle=" + angle + " cube=" + cube);
+            }
+        }
+    }
+
 
     @Test
     void formationGCubeProducesAngularBand() {

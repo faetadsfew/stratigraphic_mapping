@@ -12,6 +12,23 @@ public record SamplingPlan(double begin, double requestedStep, double end, doubl
     public static final double MAX_STEP = 0.00254;
     private static final long MAX_POINTS = 2_000_000;
 
+    public record InputParameters(double frequency, double diameterInches, double offset,
+                                  double mudCakeRho, double mudCakeEps) {
+        public InputParameters {
+            for (double value : new double[]{frequency, diameterInches, offset, mudCakeRho, mudCakeEps})
+                if (!Double.isFinite(value)) throw new IllegalArgumentException("输入文件参数必须为有限数字");
+            if (frequency <= 0) throw new IllegalArgumentException("频率必须大于 0");
+            if (diameterInches <= 0) throw new IllegalArgumentException("井径必须大于 0");
+            if (offset < 0) throw new IllegalArgumentException("油膜厚度不能小于 0");
+            if (mudCakeRho <= 0) throw new IllegalArgumentException("泥饼电阻率必须大于 0");
+            if (mudCakeEps <= 0) throw new IllegalArgumentException("泥饼介电常数必须大于 0");
+        }
+
+        public static InputParameters from(ModelInputs.Model model) {
+            return new InputParameters(model.frequency(), model.diameterInches(), model.offset(), model.mudRho(), model.mudEps());
+        }
+    }
+
     public static SamplingPlan create(double begin, double requestedStep, double end, double fullBegin, double fullEnd) {
         for (double value : new double[]{begin, requestedStep, end, fullBegin, fullEnd})
             if (!Double.isFinite(value)) throw new IllegalArgumentException("采样参数必须为有限数字");
@@ -55,6 +72,29 @@ public record SamplingPlan(double begin, double requestedStep, double end, doubl
         properties.setProperty("sampling.extended", Boolean.toString(extended()));
         properties.setProperty("sampling.description", description());
     }
+
+    private static void store(InputParameters parameters, Properties properties) {
+        properties.setProperty("input.parameters.version", "1");
+        properties.setProperty("input.frequency", Double.toString(parameters.frequency()));
+        properties.setProperty("input.diameter.inches", Double.toString(parameters.diameterInches()));
+        properties.setProperty("input.offset", Double.toString(parameters.offset()));
+        properties.setProperty("input.mud.cake.rho", Double.toString(parameters.mudCakeRho()));
+        properties.setProperty("input.mud.cake.eps", Double.toString(parameters.mudCakeEps()));
+    }
+
+    private static InputParameters readInputParameters(Properties properties) throws IOException {
+        if (properties.getProperty("input.parameters.version") == null) return null;
+        if (!properties.getProperty("input.parameters.version").equals("1")) throw new IOException("不支持的输入文件参数版本");
+        try {
+            return new InputParameters(Double.parseDouble(properties.getProperty("input.frequency")),
+                    Double.parseDouble(properties.getProperty("input.diameter.inches")),
+                    Double.parseDouble(properties.getProperty("input.offset")),
+                    Double.parseDouble(properties.getProperty("input.mud.cake.rho")),
+                    Double.parseDouble(properties.getProperty("input.mud.cake.eps")));
+        } catch (IllegalArgumentException | NullPointerException ex) {
+            throw new IOException("输入文件参数无效：" + ex.getMessage(), ex);
+        }
+    }
     static SamplingPlan read(Path snapshot) throws IOException {
         Properties properties = properties(snapshot.resolve("inputs.properties"));
         if (properties.getProperty("sampling.version") == null) return null; // Old batches keep their original behavior.
@@ -75,6 +115,14 @@ public record SamplingPlan(double begin, double requestedStep, double end, doubl
     private ModelInputs.Model apply(ModelInputs.Model original) {
         return new ModelInputs.Model(original.frequency(), original.diameterInches(), original.offset(), original.mudRho(), original.mudEps(),
                 begin, step, end, original.layers(), original.fractures());
+    }
+
+    private ModelInputs.Model apply(ModelInputs.Model original, InputParameters parameters) {
+        ModelInputs.Model sampled = apply(original);
+        if (parameters == null) return sampled;
+        return new ModelInputs.Model(parameters.frequency(), parameters.diameterInches(), parameters.offset(),
+                parameters.mudCakeRho(), parameters.mudCakeEps(), sampled.begin(), sampled.step(), sampled.end(),
+                sampled.layers(), sampled.fractures());
     }
     private static String encode(ModelInputs.Model model) {
         StringBuilder text = new StringBuilder();
@@ -97,6 +145,11 @@ public record SamplingPlan(double begin, double requestedStep, double end, doubl
                 throw new IOException(card.name() + "：原始模型深度范围不一致，不能应用统一计算区间");
     }
     public static ModelInputs prepare(ModelInputs original, Path cache, double begin, double stepMm, double end) throws IOException {
+        return prepare(original, cache, begin, stepMm, end, InputParameters.from(original.cards().get(0).model()));
+    }
+
+    public static ModelInputs prepare(ModelInputs original, Path cache, double begin, double stepMm, double end,
+                                      InputParameters inputParameters) throws IOException {
         InputPreparation.verifySnapshot(original);
         var model = original.cards().get(0).model();
         requireRange(original, model.begin(), model.end());
@@ -107,8 +160,9 @@ public record SamplingPlan(double begin, double requestedStep, double end, doubl
         Properties manifest = new Properties();
         manifest.setProperty("source", properties(original.directory().resolve("inputs.properties")).getProperty("source"));
         plan.store(manifest);
+        store(Objects.requireNonNull(inputParameters), manifest);
         for (var card : original.cards()) {
-            var sampled = plan.apply(card.model());
+            var sampled = plan.apply(card.model(), inputParameters);
             Files.writeString(snapshot.resolve(card.name()), encode(sampled), StandardOpenOption.CREATE_NEW);
             manifest.setProperty("card." + card.id(), card.name());
             manifest.setProperty("model." + card.id(), sampled.toString());
@@ -128,10 +182,11 @@ public record SamplingPlan(double begin, double requestedStep, double end, doubl
         InputPreparation.verifySnapshot(original);
         requireRange(original, plan.fullBegin(), plan.fullEnd());
         Properties manifest = properties(inputs.directory().resolve("inputs.properties"));
+        InputParameters inputParameters = readInputParameters(manifest);
         for (int i = 0; i < ModelInputs.CHANNELS; i++) {
             var card = inputs.cards().get(i); var base = original.cards().get(i);
             if (!card.name().equals(base.name()) || !SimulationHistory.sha256(base.snapshot()).equals(manifest.getProperty("sampling.original.sha256." + card.id()))
-                    || !plan.apply(base.model()).equals(card.model()) || !card.model().equals(ModelInputs.parse(Files.readString(card.snapshot()))))
+                    || !plan.apply(base.model(), inputParameters).equals(card.model()) || !card.model().equals(ModelInputs.parse(Files.readString(card.snapshot()))))
                 throw new IOException(card.name() + "：采样输入与原始模型/本批采样参数不一致，不能开始或恢复计算");
         }
     }

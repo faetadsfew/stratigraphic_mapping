@@ -118,7 +118,7 @@ public final class ModelInputs {
         double[] a=row(lines,cursor,2), b=row(lines,cursor,3), c=row(lines,cursor,3);
         positive(a[0],"频率"); positive(a[1],"井径");
         if(b[0]<0) throw new IllegalArgumentException("油膜厚度不能为负");
-        positive(b[1],"泥浆电阻率"); positive(b[2],"泥浆介电常数");
+        positive(b[1],"泥饼电阻率"); positive(b[2],"泥饼介电常数");
         positive(c[1],"采样间隔");
         if(c[2]<c[0]) throw new IllegalArgumentException("终止深度小于起始深度");
         int nl=count(row(lines,cursor,1)[0],false);
@@ -135,7 +135,9 @@ public final class ModelInputs {
         for(int i=0;i<nf;i++) {
             double[] r=row(lines,cursor,5);
             if(r[1]<-90 || r[1]>90) throw new IllegalArgumentException("裂缝倾角应在 -90～90° 内");
-            positive(r[2],"裂缝电阻率"); positive(r[3],"裂缝介电常数"); positive(r[4],"裂缝张开度");
+            positive(r[2],"裂缝电阻率");
+            if(!Double.isFinite(r[3])) throw new IllegalArgumentException("裂缝第 4 列必须是有限数值");
+            positive(r[4],"裂缝张开度");
             fractures.add(Arrays.stream(r).boxed().toList());
         }
         if(cursor[0]!=lines.size()) throw new IllegalArgumentException("记录数量与 nl/nf 不一致，存在多余行");
@@ -163,7 +165,7 @@ public final class ModelInputs {
             + values("频率 Hz",m->""+m.frequency())
             + values("井径 in / 半径 m",m->m.diameterInches()+" / "+m.diameterInches()*0.0254/2)
             + values("油膜厚度 m",m->""+m.offset())
-            + values("泥浆电阻率 Ω·m / 相对介电常数",m->m.mudRho()+" / "+m.mudEps())
+            + values("泥饼电阻率 Ω·m / 相对介电常数",m->m.mudRho()+" / "+m.mudEps())
             + values("局部 MD m",m->m.begin()+"～"+m.end())
             + values("采样间隔 m",m->""+m.step())
             + values("层数 / 裂缝数",m->m.layers().size()+" / "+m.fractures().size())

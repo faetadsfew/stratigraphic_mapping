@@ -10,6 +10,12 @@ import java.util.concurrent.atomic.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ParallelSimulationRunnerTest {
+    @Test void selectableParallelismSupportsEveryChannelWithASafeHardwareDefault() {
+        assertEquals(ModelInputs.CHANNELS, ParallelSimulationRunner.maxParallelism());
+        assertEquals(Math.max(1, Math.min(ModelInputs.CHANNELS, Runtime.getRuntime().availableProcessors())),
+                ParallelSimulationRunner.defaultParallelism());
+    }
+
     @TempDir Path temp;
     private ModelInputs snapshot() throws Exception {
         Path source=Files.createDirectory(temp.resolve("source"));

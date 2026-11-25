@@ -181,7 +181,7 @@ class FractureClickInteractionTest {
                     try {
                         TitledPane anomalyPane = findTitledPane(root, "异常体");
                         assertNotNull(anomalyPane, "未找到异常体参数分组");
-                        assertTrue(anomalyPane.isExpanded(), "点击球形异常体后异常体分组未展开");
+                        assertTrue(anomalyPane.isExpanded(), "点击球体后异常体参数分组未展开");
 
                         Node sphereCard = root.lookup(".sphere-fracture-card");
                         assertNotNull(sphereCard, "未找到球体参数卡");

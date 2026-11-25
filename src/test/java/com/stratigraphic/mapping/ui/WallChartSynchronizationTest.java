@@ -67,15 +67,21 @@ class WallChartSynchronizationTest {
             assertTrue(wallBox.getChildren().get(0) instanceof Label);
             assertTrue(second.lookupAll(".ch-title").stream().anyMatch(node -> node instanceof Label label
                     && "井壁展开图（彩色）".equals(label.getText())));
+            FXMLLoader firstLoader = loader("main-view.fxml");
+            Parent first = firstLoader.load();
+            MainController firstController = firstLoader.getController();
+            scene.getProperties().put(PageNavigation.class.getName() + ":main-view.fxml", first);
             button(second, "地层剖面与井壁展开图").fire();
-            Parent first = scene.getRoot();
             ParameterPane parameters = parameters(first);
-            generate(first, parameters, 10);
+            generate(firstController, parameters, 10);
             WallResistivityChart wall = (WallResistivityChart) wallBox.getChildren().get(0);
             assertNull(second.getScene());
             assertNull(first.lookup(".wall-inspector"));
             button(first, "电成像响应模拟").fire();
             assertSame(second, scene.getRoot());
+            controller.showResult(data);
+            amplitude = (ResponseChart) amplitudeBox.getChildren().get(0);
+            phase = (ResponseChart) phaseBox.getChildren().get(0);
             second.applyCss();
             second.layout();
             assertSame(amplitude, amplitudeBox.getChildren().get(0));
@@ -112,7 +118,7 @@ class WallChartSynchronizationTest {
             assertEquals(original.depth(), reset.depth(), 1e-9);
             assertEquals(original.angleDeg(), reset.angleDeg(), 1e-9);
             button(second, "地层剖面与井壁展开图").fire();
-            generate(first, parameters, 20);
+            generate(firstController, parameters, 20);
             WallResistivityChart updated = (WallResistivityChart) wallBox.getChildren().get(0);
             assertNotSame(wall, updated);
             button(first, "电成像响应模拟").fire();
@@ -120,8 +126,8 @@ class WallChartSynchronizationTest {
             second.layout();
             assertEquals(20, updated.sampleAt(54 + (updated.getWidth() - 66) * 0.25,
                     28 + (updated.getHeight() - 130) * 0.25).resistivity());
-            assertSame(amplitude, amplitudeBox.getChildren().get(0));
-            assertSame(phase, phaseBox.getChildren().get(0));
+            assertTrue(amplitudeBox.getChildren().isEmpty(), "新模型不能继续展示旧模值图");
+            assertTrue(phaseBox.getChildren().isEmpty(), "新模型不能继续展示旧相位图");
             button(second, "地层剖面与井壁展开图").fire();
             setPoint(parameters, "unfoldPointBField", "0");
             button(first, "生成图表").fire();
@@ -133,8 +139,9 @@ class WallChartSynchronizationTest {
     @Test
     void generationBeforeSceneAndBeforeSecondPageCreationIsDeliveredWithoutSharingAcrossWindows() throws Exception {
         checkFx(() -> {
-            Parent first = loader("main-view.fxml").load();
-            generate(first, parameters(first), 10);
+            FXMLLoader firstLoader = loader("main-view.fxml");
+            Parent first = firstLoader.load();
+            generate(firstLoader.getController(), parameters(first), 10);
             Scene scene = new Scene(first, 1440, 900);
             button(first, "电成像响应模拟").fire();
             Parent second = scene.getRoot();
@@ -157,12 +164,14 @@ class WallChartSynchronizationTest {
         return (ParameterPane) ((VBox) root.lookup("#parameterSlot")).getChildren().get(0);
     }
 
-    private static void generate(Parent root, ParameterPane parameters, double resistivity) throws Exception {
+    private static void generate(MainController controller, ParameterPane parameters, double resistivity) throws Exception {
         parameters.setModel(new StratumModel(0.1, 100, 90, List.of(new StratumInterface(1)),
                 List.of(resistivity, resistivity * 10)), "synchronized model");
         setPoint(parameters, "unfoldPointAField", "0");
         setPoint(parameters, "unfoldPointBField", "2");
-        button(root, "生成图表").fire();
+        var generate = MainController.class.getDeclaredMethod("generateCharts");
+        generate.setAccessible(true);
+        generate.invoke(controller);
     }
 
     private static void setPoint(ParameterPane parameters, String name, String value) throws Exception {

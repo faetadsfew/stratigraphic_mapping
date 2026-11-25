@@ -43,14 +43,17 @@ class WallUnfoldFxmlTest {
                 assertFalse(root.lookupAll(".titled-pane").stream().anyMatch(n->n instanceof TitledPane t&&t.getText().equals("输入模型信息")));
                 assertFalse(root.lookupAll(".titled-pane").stream().anyMatch(n->n instanceof TitledPane t&&t.getText().equals("各通道计算进度")));
                 assertFalse(root.lookupAll(".label").stream().anyMatch(n->n instanceof Label label&&label.getText().equals("模拟计算与结果参数")));
+                var labels=root.lookupAll(".label").stream().filter(Label.class::isInstance).map(Label.class::cast).map(Label::getText).toList();
+                assertTrue(labels.containsAll(List.of("频率 (MHz)","井径 (in)","油膜厚度 (m)")));
+                assertFalse(labels.contains("间距 ≤ 2.54 mm；区间外按各电极端点延拓。"));
                 assertEquals(2,root.lookupAll(".separator").size());
                 var resultPane=root.lookupAll(".titled-pane").stream().filter(n->n instanceof TitledPane pane&&pane.getText().equals("有关计算结果信息")).findFirst().orElseThrow();
                 assertSame(root.lookup("#imagingStep3"),resultPane.getParent());
                 assertSame(root.lookup("#imagingStep1"),button(root,"获得输入数据").getParent());
-                assertSame(root.lookup("#imagingStep2"),button(root,"计算输出数据").getParent());
+                assertSame(root.lookup("#imagingStep2"),button(root,"正演计算").getParent());
                 assertTrue(root.lookupAll(".label").stream().filter(n->n instanceof Label).map(n->((Label)n).getText()).noneMatch(t->t.contains("可直接选择历史")||t.contains("选择六列")));
-                for(String name:new String[]{"获得输入数据","计算输出数据","生成图片"}) assertNotNull(button(root,name));
-                assertTrue(button(root,"计算输出数据").isDisabled());assertTrue(button(root,"导出 PNG").isDisabled());
+                for(String name:new String[]{"获得输入数据","正演计算","井壁成像"}) assertNotNull(button(root,name));
+                assertTrue(button(root,"正演计算").isDisabled());assertTrue(button(root,"导出 PNG").isDisabled());
                 WallUnfoldController controller=loader.getController();controller.showResult(data);root.applyCss();root.layout();
                 assertFalse(button(root,"导出 PNG").isDisabled());
                 StackPane a=(StackPane)root.lookup("#amplitudeBox"),p=(StackPane)root.lookup("#phaseBox");
@@ -124,7 +127,7 @@ class WallUnfoldFxmlTest {
         fx(()->{controller.resultFilePicker=(chooser,owner)->{selections.incrementAndGet();return file.toFile();};return null;});
         generateAndWait(root);
         fx(()->{
-            assertTrue(button(root,"计算输出数据").isDisabled());assertFalse(button(root,"导出 PNG").isDisabled());
+            assertTrue(button(root,"正演计算").isDisabled());assertFalse(button(root,"导出 PNG").isDisabled());
             root.layout();var chart=(ResponseChart)((StackPane)root.lookup("#amplitudeBox")).getChildren().get(0);assertEquals(5,chart.sampleAt(55,29).amplitude());
             // A new computed result must not bypass the next file selection.
             controller.acceptComputedResult(data);return null;
@@ -133,7 +136,7 @@ class WallUnfoldFxmlTest {
         Node retained=fx(()->{
             root.layout();var chart=(ResponseChart)((StackPane)root.lookup("#amplitudeBox")).getChildren().get(0);assertEquals(5,chart.sampleAt(55,29).amplitude());
             controller.resultFilePicker=(chooser,owner)->{selections.incrementAndGet();return null;};
-            button(root,"生成图片").fire();assertSame(chart,((StackPane)root.lookup("#amplitudeBox")).getChildren().get(0));
+            button(root,"井壁成像").fire();assertSame(chart,((StackPane)root.lookup("#amplitudeBox")).getChildren().get(0));
             controller.resultFilePicker=(chooser,owner)->{selections.incrementAndGet();return invalid.toFile();};return chart;
         });
         generateAndWait(root);assertEquals(4,selections.get());
@@ -174,9 +177,13 @@ class WallUnfoldFxmlTest {
             assertEquals(List.of(192,176,2,1,0),list.getItems().stream().map(item->((SimulationHistory.Entry)item).completed()).toList());
             assertTrue(button(root,"继续所选计算").isDisabled(),"Completed batches cannot be resumed");
             list.getSelectionModel().select(1);
-            assertFalse(button(root,"继续所选计算").isDisabled());assertTrue(button(root,"计算输出数据").isDisabled());
+            assertFalse(button(root,"继续所选计算").isDisabled());assertTrue(button(root,"正演计算").isDisabled());
             Spinner<?> concurrency=(Spinner<?>)root.lookup("#parallelism");
             assertEquals(Math.min(192,Runtime.getRuntime().availableProcessors()),concurrency.getValue());
+            var concurrencyValues=(javafx.scene.control.SpinnerValueFactory.IntegerSpinnerValueFactory)concurrency.getValueFactory();
+            assertEquals(192,concurrencyValues.getMax());
+            concurrencyValues.setValue(192);assertEquals(192,concurrency.getValue());
+            concurrencyValues.setValue(Math.min(192,Runtime.getRuntime().availableProcessors()));
             assertTrue(root.lookup("#parallelismSettings").isVisible());assertTrue(root.lookup("#parallelismSettings").isManaged());
             var historyPane=root.lookupAll(".titled-pane").stream().filter(node->node instanceof TitledPane pane&&pane.getText().equals("历史记录")).findFirst().orElseThrow();
             assertSame(root.lookup("#imagingStep2"),historyPane.getParent());
@@ -219,7 +226,7 @@ class WallUnfoldFxmlTest {
         // This fixture has no model inputs, so resuming fails validation before any solver starts.
         CountDownLatch computationEnded=new CountDownLatch(1);
         fx(()->{
-            Button plot=button(root,"生成图片");
+            Button plot=button(root,"井壁成像");
             plot.disabledProperty().addListener((observable,previous,disabled)->{if(!disabled)computationEnded.countDown();});
             button(root,"继续所选计算").fire();
             Node settings=root.lookup("#parallelismSettings");
@@ -265,32 +272,53 @@ class WallUnfoldFxmlTest {
         try{Platform.startup(started::countDown);assertTrue(started.await(10,TimeUnit.SECONDS));}catch(IllegalStateException ignored){}
         Path converted=Files.createDirectory(workspace.resolve("converted"));
         for(int id=1;id<=192;id++)Files.writeString(converted.resolve(String.format("Card_%03d.txt",id)),
-            "2500000 8\n0.005 1000 6\n0 0.001 1.5\n1\n2.5 100 10\n0\n");
+            "2500000 8\n0.005 1000 6\n0 0.001 1.5\n1\n2.5 321 12\n0\n");
         FXMLLoader loader=new FXMLLoader(getClass().getResource("/com/stratigraphic/mapping/wall-unfold-view.fxml"));
         loader.setControllerFactory(type->new WallUnfoldController(workspace));
-        Parent root=fx(()->{Parent view=loader.load();new Scene(view,1100,720);view.applyCss();view.layout();return view;});
+        Parent root=fx(()->{Parent view=loader.load();Scene scene=new Scene(view,1100,720);
+            scene.getStylesheets().add(getClass().getResource("/com/stratigraphic/mapping/app.css").toExternalForm());view.applyCss();view.layout();return view;});
         WallUnfoldController controller=loader.getController();
         var directory=WallUnfoldController.class.getDeclaredField("inputDirectory");directory.setAccessible(true);directory.set(controller,converted);
+        var defaults=WallUnfoldController.class.getDeclaredMethod("loadInputParameterDefaults",Path.class);defaults.setAccessible(true);
+        fx(()->{defaults.invoke(controller,converted);return null;});
         CountDownLatch loaded=new CountDownLatch(1);
         fx(()->{
             TextField begin=(TextField)root.lookup("#samplingBegin"),step=(TextField)root.lookup("#samplingStep"),end=(TextField)root.lookup("#samplingEnd");
-            assertEquals("0",begin.getText());assertEquals("1",step.getText());assertEquals("1.5",end.getText());
+            assertEquals("0",begin.getText());assertEquals("2.54",step.getText());assertEquals("1.5",end.getText());
+            assertEquals("2.5",((TextField)root.lookup("#frequencyMHz")).getText());
+            assertEquals("8",((TextField)root.lookup("#caliperInches")).getText());
+            assertEquals("0.005",((TextField)root.lookup("#oilFilmThickness")).getText());
+            assertEquals("1000",((TextField)root.lookup("#mudCakeResistivity")).getText());
+            assertEquals("6",((TextField)root.lookup("#mudCakePermittivity")).getText());
+            assertEquals("100",((TextField)root.lookup("#mudResistivity")).getText());
+            assertEquals("10",((TextField)root.lookup("#mudPermittivity")).getText());
+            assertFalse(((TextField)root.lookup("#mudResistivity")).isEditable());assertFalse(((TextField)root.lookup("#mudPermittivity")).isEditable());
+            ImageIO.write(SwingFXUtils.fromFXImage(root.snapshot(null,null),null),"png",Path.of("target","ui-input-parameters-1100.png").toFile());
             assertTrue(begin.localToScene(begin.getBoundsInLocal()).getMinY()<button(root,"获得输入数据").localToScene(button(root,"获得输入数据").getBoundsInLocal()).getMinY());
-            step.setText("2.55");button(root,"获得输入数据").fire();assertTrue(button(root,"计算输出数据").isDisabled());
+            step.setText("2.55");button(root,"获得输入数据").fire();assertTrue(button(root,"正演计算").isDisabled());
             assertTrue(((Label)root.lookup("#statusMessage")).getText().contains("2.54"));
             begin.setText("0.2");step.setText("2.54");end.setText("0.9");
-            button(root,"计算输出数据").disabledProperty().addListener((observable,oldValue,disabled)->{if(!disabled)loaded.countDown();});
-            button(root,"获得输入数据").fire();assertTrue(begin.isDisabled());assertTrue(step.isDisabled());assertTrue(end.isDisabled());return null;
+            ((TextField)root.lookup("#frequencyMHz")).setText("40");((TextField)root.lookup("#caliperInches")).setText("9.5");
+            ((TextField)root.lookup("#oilFilmThickness")).setText("0.007");((TextField)root.lookup("#mudCakeResistivity")).setText("800");
+            ((TextField)root.lookup("#mudCakePermittivity")).setText("7.5");
+            button(root,"正演计算").disabledProperty().addListener((observable,oldValue,disabled)->{if(!disabled)loaded.countDown();});
+            button(root,"获得输入数据").fire();
+            for(String id:new String[]{"samplingBegin","samplingStep","samplingEnd","frequencyMHz","caliperInches","oilFilmThickness","mudCakeResistivity","mudCakePermittivity"})
+                assertTrue(root.lookup("#"+id).isDisabled());
+            return null;
         });
         assertTrue(loaded.await(30,TimeUnit.SECONDS),"Valid sampling input should load without executing solver");
         fx(()->{
-            assertFalse(button(root,"计算输出数据").isDisabled());
+            assertFalse(button(root,"正演计算").isDisabled());
             Label status=(Label)root.lookup("#statusMessage");assertTrue(status.getText().contains("输入数据已就绪"));assertEquals(status.getText(),status.getTooltip().getText());
             var field=WallUnfoldController.class.getDeclaredField("inputs");field.setAccessible(true);
             var inputs=(com.stratigraphic.mapping.simulation.ModelInputs)field.get(controller);
             assertEquals(0.2,inputs.cards().get(0).model().begin());assertEquals(0.9,inputs.cards().get(0).model().end());
             assertTrue(inputs.cards().get(0).model().step()<=0.00254);
-            ((TextField)root.lookup("#samplingStep")).setText("1");assertTrue(button(root,"计算输出数据").isDisabled());assertNull(field.get(controller));return null;
+            assertEquals(40_000_000,inputs.cards().get(0).model().frequency());assertEquals(9.5,inputs.cards().get(0).model().diameterInches());
+            assertEquals(0.007,inputs.cards().get(0).model().offset());assertEquals(800,inputs.cards().get(0).model().mudRho());assertEquals(7.5,inputs.cards().get(0).model().mudEps());
+            assertEquals(321,inputs.cards().get(0).model().layers().get(0).get(1));assertEquals(12,inputs.cards().get(0).model().layers().get(0).get(2));
+            ((TextField)root.lookup("#samplingStep")).setText("1");assertTrue(button(root,"正演计算").isDisabled());assertNull(field.get(controller));return null;
         });
     }
     @Test void calculationProgressShowsDepthOnANewLineWithoutClipping(@TempDir Path workspace)throws Exception {
@@ -321,6 +349,10 @@ class WallUnfoldFxmlTest {
             });
             assertTrue(activity.await(10,TimeUnit.SECONDS));
             fx(()->{
+                for(String id:new String[]{"#mudResistivity","#mudPermittivity"}) {
+                    TextField display=(TextField)root.lookup(id);
+                    assertTrue(display.isDisabled());assertFalse(display.isEditable());
+                }
                 for(double width:new double[]{1100,900}) {
                     root.resize(width,720);root.applyCss();root.layout();
                     Label progressMessage=(Label)root.lookup("#calculationMessage");
@@ -334,6 +366,12 @@ class WallUnfoldFxmlTest {
                 return null;
             });
         } finally {release.countDown();assertTrue(finished.await(10,TimeUnit.SECONDS));}
+        fx(()->{
+            TextField resistivity=(TextField)root.lookup("#mudResistivity"),permittivity=(TextField)root.lookup("#mudPermittivity");
+            assertFalse(resistivity.isDisabled());assertFalse(permittivity.isDisabled());
+            assertFalse(resistivity.isEditable());assertFalse(permittivity.isEditable());
+            assertEquals("100",resistivity.getText());assertEquals("10",permittivity.getText());return null;
+        });
     }
     @Test void inputActivityKeepsSidebarGeometryScrollAndExpandedState(@TempDir Path workspace)throws Exception {
         CountDownLatch started=new CountDownLatch(1);
@@ -363,7 +401,7 @@ class WallUnfoldFxmlTest {
             button(root,"获得输入数据").requestFocus();scroll.setVvalue(0.47);root.layout();
             Label status=(Label)root.lookup("#statusMessage");
             status.textProperty().addListener((observable,old,value)->{if(value.contains("已加载 80/192"))firstActivity.countDown();if(value.contains("正在应用采样参数"))secondActivity.countDown();});
-            double[] state={scroll.getContent().localToScene(0,0).getY(),scroll.getContent().getLayoutBounds().getWidth(),button(root,"计算输出数据").localToScene(0,0).getY(),button(root,"生成图片").localToScene(0,0).getY()};
+            double[] state={scroll.getContent().localToScene(0,0).getY(),scroll.getContent().getLayoutBounds().getWidth(),button(root,"正演计算").localToScene(0,0).getY(),button(root,"井壁成像").localToScene(0,0).getY()};
             var run=WallUnfoldController.class.getDeclaredMethod("runTask",javafx.concurrent.Task.class,int.class,java.util.function.Consumer.class);run.setAccessible(true);
             run.invoke(controller,task,0,(java.util.function.Consumer<String>)value->{((Label)root.lookup("#inputMessage")).setText("已加载并校验 192/192\n计算 MD：0.2～0.9 m\n实际间距：2.54 mm");finished.countDown();});
             assertTrue(status.getText().contains("正在获得输入数据"));return state;
@@ -381,7 +419,7 @@ class WallUnfoldFxmlTest {
             root.applyCss();root.layout();ScrollPane scroll=(ScrollPane)root.lookup("#parameterScroll");
             // Compare displayed pixels: ScrollPane may adjust its normalized vvalue when child bounds change.
             assertEquals(before[0],scroll.getContent().localToScene(0,0).getY(),0.1);assertEquals(before[1],scroll.getContent().getLayoutBounds().getWidth(),0.1);
-            assertEquals(before[2],button(root,"计算输出数据").localToScene(0,0).getY(),0.1);assertEquals(before[3],button(root,"生成图片").localToScene(0,0).getY(),0.1);
+            assertEquals(before[2],button(root,"正演计算").localToScene(0,0).getY(),0.1);assertEquals(before[3],button(root,"井壁成像").localToScene(0,0).getY(),0.1);
             assertEquals(22,((Label)root.lookup("#inputMessage")).getHeight(),0.1);
             for(Node node:root.lookupAll(".titled-pane"))if(node instanceof TitledPane pane){if(pane.getText().equals("有关计算结果信息"))assertFalse(pane.isExpanded());if(pane.getText().equals("历史记录"))assertTrue(pane.isExpanded());}
             return null;
@@ -390,7 +428,7 @@ class WallUnfoldFxmlTest {
     private static void generateAndWait(Parent root,Runnable whileLoading)throws Exception {
         CountDownLatch done=new CountDownLatch(1);
         fx(()->{
-            Button generate=button(root,"生成图片");
+            Button generate=button(root,"井壁成像");
             javafx.beans.value.ChangeListener<Boolean> listener=new javafx.beans.value.ChangeListener<>() {
                 public void changed(javafx.beans.value.ObservableValue<? extends Boolean> observable,Boolean old,Boolean disabled){
                     if(!disabled){generate.disabledProperty().removeListener(this);done.countDown();}

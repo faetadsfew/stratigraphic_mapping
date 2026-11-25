@@ -23,8 +23,10 @@ import javafx.scene.control.Separator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -32,6 +34,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -60,7 +64,11 @@ public final class ParameterPane extends BorderPane {
 
     private final TextField countField = new TextField();
     private final TextField dipAngleField = new TextField();
+    private static final BigDecimal METERS_PER_INCH = new BigDecimal("0.0254");
     private final TextField radiusField = new TextField();
+    private double radiusMeters = Double.NaN;
+    private boolean radiusEdited;
+    private boolean updatingRadiusDisplay;
     private final TextField wellRhoField = new TextField();
     private final TextField wellDielectricField = new TextField();
 
@@ -129,7 +137,7 @@ public final class ParameterPane extends BorderPane {
 
         countField.setText(plain(model.interfaceCount()));
         dipAngleField.setText(plain(model.dipAngle()));
-        radiusField.setText(plain(model.wellRadius()));
+        setRadiusMeters(model.wellRadius());
         wellRhoField.setText(plain(model.wellResistivity()));
         wellDielectricField.setText(plain(model.dielectricConstant()));
 
@@ -148,8 +156,14 @@ public final class ParameterPane extends BorderPane {
             dielectricConstants.add(plain(epsilon));
         }
 
-        unfoldPointAField.setText(plain(round(model.minDepth() - 0.1)));
-        unfoldPointBField.setText(plain(round(model.maxDepth() + 0.1)));
+        double pointA = round(model.minDepth() - 0.1);
+        double pointB = round(model.maxDepth() + 0.1);
+        if (model.interfaceCount() == 0) {
+            pointA = Math.min(0, pointA);
+            pointB = Math.max(1.5, pointB);
+        }
+        unfoldPointAField.setText(plain(pointA));
+        unfoldPointBField.setText(plain(pointB));
         rebuildRows(model.interfaceCount(), depths, rhos, dielectricConstants);
         rebuildFractureRows(model.fractures());
         rebuildSphereRows(model.sphereFractures());
@@ -169,7 +183,7 @@ public final class ParameterPane extends BorderPane {
                     currentTexts(dielectricFields));
         }
 
-        double radius = readNumber(radiusField.getText(), "井眼半径");
+        double radius = readRadiusMeters();
         double wellRho = readNumber(wellRhoField.getText(), "井眼电阻率");
         double wellDielectric = readPositiveNumber(
                 wellDielectricField.getText(), "井眼介电常数 εr");
@@ -493,8 +507,10 @@ public final class ParameterPane extends BorderPane {
         wellGrid.getColumnConstraints().addAll(
                 column(104, HPos.LEFT), column(120, HPos.LEFT));
 
-        wellGrid.add(caption("井眼半径 / m"), 0, 0);
+        wellGrid.add(caption("井眼半径 / in"), 0, 0);
         wellGrid.add(radiusField, 1, 0);
+        radiusField.setId("wellRadiusInches");
+        radiusField.setTooltip(new Tooltip("半径仅按整数英寸显示，计算保留精确米制值；手动修改按实际输入的英寸换算，显示取整不改变计算值；第二页井径为直径"));
         wellGrid.add(caption("井眼电阻率 / Ω·m"), 0, 1);
         wellGrid.add(wellRhoField, 1, 1);
         wellGrid.add(caption("介电常数 εr"), 0, 2);
@@ -504,8 +520,20 @@ public final class ParameterPane extends BorderPane {
             field.setPrefWidth(120);
             field.getStyleClass().add("form-input");
             restrictToNumber(field);
-            field.textProperty().addListener((o, was, is) -> onDataChanged.run());
+            field.textProperty().addListener((o, was, is) -> {
+                if (field == radiusField && !updatingRadiusDisplay) {
+                    radiusEdited = true;
+                }
+                onDataChanged.run();
+            });
         }
+
+        radiusField.setOnAction(event -> roundRadiusInput());
+        radiusField.focusedProperty().addListener((observable, was, focused) -> {
+            if (!focused) {
+                roundRadiusInput();
+            }
+        });
 
         GridPane formationSettings = new GridPane();
         formationSettings.setHgap(6);
@@ -552,17 +580,28 @@ public final class ParameterPane extends BorderPane {
 
         VBox interfaceBlock = new VBox(6, interfaceTitle, interfaceGrid);
         VBox rhoBlock = new VBox(6, rhoTitle, layerGrid);
+        interfaceBlock.setMinWidth(Region.USE_PREF_SIZE);
+        rhoBlock.setMinWidth(Region.USE_PREF_SIZE);
 
         // 地层界面表与层电阻率表并排放到同一行，顶部对齐
         HBox tablesRow = new HBox(10, interfaceBlock, rhoBlock);
         tablesRow.setAlignment(Pos.TOP_LEFT);
 
         VBox formationContent = new VBox(10, formationSettings, tablesRow);
+        formationContent.setMinWidth(Region.USE_PREF_SIZE);
+        ScrollPane formationScroll = new ScrollPane(formationContent);
+        formationScroll.setId("formationScroll");
+        formationScroll.setMinWidth(0);
+        formationScroll.setMinHeight(Region.USE_PREF_SIZE);
+        formationScroll.setFitToHeight(true);
+        formationScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.ALWAYS);
+        formationScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        formationScroll.getStyleClass().add("form-scroll");
 
         TitledPane wellSection = new TitledPane("井数据", wellGrid);
         wellSection.getStyleClass().add("titled-pane");
 
-        formationSection = new TitledPane("地层数据", formationContent);
+        formationSection = new TitledPane("地层数据", formationScroll);
         formationSection.getStyleClass().add("titled-pane");
 
         fractureSection = buildFractureSection();
@@ -574,6 +613,7 @@ public final class ParameterPane extends BorderPane {
                 wellSection, formationSection, fractureSection, anomalySection,
                 textSection, wallSection);
         formAccordion = accordion;
+        accordion.setMinWidth(0);
         // 展开的分组必须按内容高度撑开，再由外层 ScrollPane 负责滚动，不能被视口压扁裁切。
         accordion.setMinHeight(Region.USE_PREF_SIZE);
 
@@ -587,6 +627,7 @@ public final class ParameterPane extends BorderPane {
         accordion.setExpandedPane(null);
 
         VBox form = new VBox(4, accordion);
+        form.setMinWidth(0);
         form.setPadding(new Insets(0, 14, 18, 14));
 
         ScrollPane scroll = new ScrollPane(form);
@@ -628,7 +669,7 @@ public final class ParameterPane extends BorderPane {
             }
         });
 
-        HBox actions = new HBox(6, addButton, removeButton);
+        FlowPane actions = new FlowPane(6, 6, addButton, removeButton);
         actions.setAlignment(Pos.CENTER_LEFT);
 
         VBox content = new VBox(8, hint, actions, fractureRowsBox);
@@ -688,7 +729,7 @@ public final class ParameterPane extends BorderPane {
             }
         });
 
-        HBox actions = new HBox(6, addButton, removeButton);
+        FlowPane actions = new FlowPane(6, 6, addButton, removeButton);
         actions.setAlignment(Pos.CENTER_LEFT);
 
         return new VBox(8, title, hint, actions, sphereRowsBox);
@@ -809,7 +850,7 @@ public final class ParameterPane extends BorderPane {
             }
         });
 
-        HBox actions = new HBox(6, addButton, removeButton);
+        FlowPane actions = new FlowPane(6, 6, addButton, removeButton);
         actions.setAlignment(Pos.CENTER_LEFT);
 
         return new VBox(8, title, hint, actions, cubeRowsBox);
@@ -1303,7 +1344,10 @@ public final class ParameterPane extends BorderPane {
         Button confirmDataButton = new Button("生成图表");
         confirmDataButton.getStyleClass().add("primary-button");
         confirmDataButton.setMaxWidth(Double.MAX_VALUE);
-        confirmDataButton.setOnAction(e -> onConfirmData.run());
+        confirmDataButton.setOnAction(e -> {
+            roundRadiusInput();
+            onConfirmData.run();
+        });
 
         HBox buttons = new HBox(confirmDataButton);
         HBox.setHgrow(confirmDataButton, Priority.ALWAYS);
@@ -1381,8 +1425,8 @@ public final class ParameterPane extends BorderPane {
 
         int count = depthFields.size();
 
-        if (count <= 1) {
-            showError("至少要保留 1 条界面");
+        if (count == 0) {
+            showError("当前没有可删除的界面");
             return;
         }
 
@@ -1508,9 +1552,9 @@ public final class ParameterPane extends BorderPane {
 
         double value = readNumber(countField.getText(), "界面个数 n");
 
-        if (value != Math.rint(value) || value < 1 || value > MAX_INTERFACES) {
+        if (value != Math.rint(value) || value < 0 || value > MAX_INTERFACES) {
             throw new IllegalArgumentException(
-                    "界面个数 n 需要是 1 ~ " + MAX_INTERFACES + " 之间的整数");
+                    "界面个数 n 需要是 0 ~ " + MAX_INTERFACES + " 之间的整数");
         }
         return (int) value;
     }
@@ -1561,6 +1605,7 @@ public final class ParameterPane extends BorderPane {
     private TextField numberField(String value, double width) {
 
         TextField field = new TextField(value == null ? "" : value);
+        field.setMinWidth(0);
         field.setPrefWidth(width);
         field.setMaxWidth(Double.MAX_VALUE);
         field.getStyleClass().add("form-input");
@@ -1569,6 +1614,37 @@ public final class ParameterPane extends BorderPane {
         // 新建时文本已经填好了，所以这里才挂监听，不会在建表时白跑一趟
         field.textProperty().addListener((o, was, is) -> onDataChanged.run());
         return field;
+    }
+
+    private double readRadiusMeters() {
+        readPositiveNumber(radiusField.getText(), "井眼半径 / in");
+        if (radiusEdited || !Double.isFinite(radiusMeters)) {
+            return new BigDecimal(radiusField.getText().trim())
+                    .multiply(METERS_PER_INCH).doubleValue();
+        }
+        return radiusMeters;
+    }
+
+    private void setRadiusMeters(double value) {
+        String displayedInches = BigDecimal.valueOf(value)
+                .divide(METERS_PER_INCH, 0, RoundingMode.CEILING).toPlainString();
+        radiusMeters = value;
+        radiusEdited = false;
+        updatingRadiusDisplay = true;
+        try {
+            radiusField.getTooltip().setText("显示值向上取整，实际计算半径：" + plain(value)
+                    + " m；手动修改按实际输入的英寸换算，显示取整不改变计算值；第二页井径为直径");
+            radiusField.setText(displayedInches);
+        } finally {
+            updatingRadiusDisplay = false;
+        }
+    }
+
+    private void roundRadiusInput() {
+        double value = parseOrNaN(radiusField.getText());
+        if (Double.isFinite(value) && value > 0) {
+            setRadiusMeters(readRadiusMeters());
+        }
     }
 
     /** 只让输入合法的十进制数字（含 1.0E-4 这种写法），别的字符直接吃掉。 */

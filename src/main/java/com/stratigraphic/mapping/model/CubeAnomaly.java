@@ -55,6 +55,15 @@ public record CubeAnomaly(double centerDepth,
         return sideLength / 2;
     }
 
+    public boolean intersectsWellAt(double wellRadius, double angleDeg) {
+        if (!Double.isFinite(wellRadius) || wellRadius <= 0 || !Double.isFinite(angleDeg)) {
+            throw new IllegalArgumentException("井眼半径必须大于 0 且方位角必须为有限数字");
+        }
+        double relative = Math.toRadians(angleDeg % 360 - normalizedAzimuthDeg());
+        return Math.abs(wellRadius * Math.cos(relative) - distanceFromAxis) <= halfSide() + 1e-9
+                && Math.abs(wellRadius * Math.sin(relative)) <= halfSide() + 1e-9;
+    }
+
     /** 方位角按 360° 周期归一化到 [0°, 360°)。 */
     public double normalizedAzimuthDeg() {
         double result = azimuthDeg % 360;
