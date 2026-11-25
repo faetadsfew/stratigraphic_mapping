@@ -292,7 +292,9 @@ class WallUnfoldFxmlTest {
             assertEquals("6",((TextField)root.lookup("#mudCakePermittivity")).getText());
             assertEquals("100",((TextField)root.lookup("#mudResistivity")).getText());
             assertEquals("10",((TextField)root.lookup("#mudPermittivity")).getText());
-            assertFalse(((TextField)root.lookup("#mudResistivity")).isEditable());assertFalse(((TextField)root.lookup("#mudPermittivity")).isEditable());
+            assertTrue(((TextField)root.lookup("#mudResistivity")).isEditable());assertTrue(((TextField)root.lookup("#mudPermittivity")).isEditable());
+            assertTrue(root.lookup("#mudResistivity").isFocusTraversable());assertTrue(root.lookup("#mudPermittivity").isFocusTraversable());
+            ((TextField)root.lookup("#mudResistivity")).setText("225");((TextField)root.lookup("#mudPermittivity")).setText("14");
             ImageIO.write(SwingFXUtils.fromFXImage(root.snapshot(null,null),null),"png",Path.of("target","ui-input-parameters-1100.png").toFile());
             assertTrue(begin.localToScene(begin.getBoundsInLocal()).getMinY()<button(root,"获得输入数据").localToScene(button(root,"获得输入数据").getBoundsInLocal()).getMinY());
             step.setText("2.55");button(root,"获得输入数据").fire();assertTrue(button(root,"正演计算").isDisabled());
@@ -303,7 +305,7 @@ class WallUnfoldFxmlTest {
             ((TextField)root.lookup("#mudCakePermittivity")).setText("7.5");
             button(root,"正演计算").disabledProperty().addListener((observable,oldValue,disabled)->{if(!disabled)loaded.countDown();});
             button(root,"获得输入数据").fire();
-            for(String id:new String[]{"samplingBegin","samplingStep","samplingEnd","frequencyMHz","caliperInches","oilFilmThickness","mudCakeResistivity","mudCakePermittivity"})
+            for(String id:new String[]{"samplingBegin","samplingStep","samplingEnd","frequencyMHz","caliperInches","oilFilmThickness","mudCakeResistivity","mudCakePermittivity","mudResistivity","mudPermittivity"})
                 assertTrue(root.lookup("#"+id).isDisabled());
             return null;
         });
@@ -318,6 +320,16 @@ class WallUnfoldFxmlTest {
             assertEquals(40_000_000,inputs.cards().get(0).model().frequency());assertEquals(9.5,inputs.cards().get(0).model().diameterInches());
             assertEquals(0.007,inputs.cards().get(0).model().offset());assertEquals(800,inputs.cards().get(0).model().mudRho());assertEquals(7.5,inputs.cards().get(0).model().mudEps());
             assertEquals(321,inputs.cards().get(0).model().layers().get(0).get(1));assertEquals(12,inputs.cards().get(0).model().layers().get(0).get(2));
+            var revision=WallUnfoldController.class.getDeclaredField("inputRevision");revision.setAccessible(true);
+            long loadedRevision=revision.getLong(controller);
+            byte[] snapshot=Files.readAllBytes(inputs.cards().get(0).snapshot());
+            TextField resistivity=(TextField)root.lookup("#mudResistivity"),permittivity=(TextField)root.lookup("#mudPermittivity");
+            assertEquals("225",resistivity.getText());assertEquals("14",permittivity.getText());
+            assertFalse(resistivity.isDisabled());assertFalse(permittivity.isDisabled());
+            resistivity.setText("330");permittivity.setText("19");
+            assertSame(inputs,field.get(controller));assertEquals(loadedRevision,revision.getLong(controller));
+            assertFalse(button(root,"正演计算").isDisabled());
+            assertArrayEquals(snapshot,Files.readAllBytes(inputs.cards().get(0).snapshot()));
             ((TextField)root.lookup("#samplingStep")).setText("1");assertTrue(button(root,"正演计算").isDisabled());assertNull(field.get(controller));return null;
         });
     }
@@ -345,13 +357,14 @@ class WallUnfoldFxmlTest {
                 Label progressMessage=(Label)root.lookup("#calculationMessage");
                 progressMessage.textProperty().addListener((observable,previous,current)->{if(message.equals(current))activity.countDown();});
                 var run=WallUnfoldController.class.getDeclaredMethod("runTask",javafx.concurrent.Task.class,int.class,java.util.function.Consumer.class);run.setAccessible(true);
+                ((TextField)root.lookup("#mudResistivity")).setText("225");((TextField)root.lookup("#mudPermittivity")).setText("14");
                 run.invoke(loader.getController(),task,1,(java.util.function.Consumer<String>)value->finished.countDown());return null;
             });
             assertTrue(activity.await(10,TimeUnit.SECONDS));
             fx(()->{
                 for(String id:new String[]{"#mudResistivity","#mudPermittivity"}) {
                     TextField display=(TextField)root.lookup(id);
-                    assertTrue(display.isDisabled());assertFalse(display.isEditable());
+                    assertTrue(display.isDisabled());
                 }
                 for(double width:new double[]{1100,900}) {
                     root.resize(width,720);root.applyCss();root.layout();
@@ -369,8 +382,10 @@ class WallUnfoldFxmlTest {
         fx(()->{
             TextField resistivity=(TextField)root.lookup("#mudResistivity"),permittivity=(TextField)root.lookup("#mudPermittivity");
             assertFalse(resistivity.isDisabled());assertFalse(permittivity.isDisabled());
-            assertFalse(resistivity.isEditable());assertFalse(permittivity.isEditable());
-            assertEquals("100",resistivity.getText());assertEquals("10",permittivity.getText());return null;
+            assertTrue(resistivity.isEditable());assertTrue(permittivity.isEditable());
+            assertEquals("225",resistivity.getText());assertEquals("14",permittivity.getText());
+            resistivity.setText("330");permittivity.setText("19");
+            assertEquals("330",resistivity.getText());assertEquals("19",permittivity.getText());return null;
         });
     }
     @Test void inputActivityKeepsSidebarGeometryScrollAndExpandedState(@TempDir Path workspace)throws Exception {

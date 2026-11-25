@@ -120,8 +120,7 @@ public final class WallUnfoldController {
             });
         }
         for(TextField field:new TextField[]{mudResistivityDisplay,mudPermittivityDisplay}) {
-            field.setEditable(false);field.setFocusTraversable(false);
-            field.setTooltip(new Tooltip("仅用于页面展示，不读取或写入计算输入文件"));
+            field.setTooltip(new Tooltip("可修改，仅用于页面展示，不读取或写入计算输入文件，也不参与正演计算"));
         }
         samplingStep.setTooltip(new Tooltip("大于 0，最大 2.54 mm；不能整除计算区间时，略减间距以包含两个端点，并显示实际值"));
         samplingGrid.setPadding(new Insets(6));samplingGrid.setStyle("-fx-border-color: #d8e1ea; -fx-border-radius: 4;");
