@@ -171,9 +171,9 @@ class FractureClickInteractionTest {
                 assertNotNull(chart, "未找到井壁展开图");
                 double sphereX = 78 + 90.0 / 360.0 * 600;
                 double halfHeight = Math.sqrt(
-                        0.08 * 0.08 - 0.10 * 0.10 - 0.15 * 0.15
-                                + 2 * 0.10 * 0.15);
-                double sphereY = 42 + (5.6 + halfHeight - 4.9) / 1.0 * 700;
+                        0.04 * 0.04 - 0.10 * 0.10 - 0.10 * 0.10
+                                + 2 * 0.10 * 0.10);
+                double sphereY = 42 + (5.15 + halfHeight - 4.9) / 1.0 * 700;
                 chart.getOnMouseClicked().handle(mouseClick(sphereX, sphereY));
 
                 PauseTransition settle = new PauseTransition(Duration.millis(1000));

@@ -56,6 +56,8 @@ public final class WallLineUnfoldChart extends Pane {
     private static final int TRACE_STEPS = 720;
     private static final Color TRACE_COLOR = Color.BLACK;
     private static final double FRACTURE_HIT_TOLERANCE = 10;
+    private static final double FRACTURE_BASE_WIDTH = 3.0;
+    private static final double MAX_FRACTURE_LINE_WIDTH = 80.0;
     private static final double INTERFACE_HIT_TOLERANCE = 8;
     private static final double SPHERE_HIT_TOLERANCE = 6;
     private static final double[] WRAP_SHIFTS = {-360, 0, 360};
@@ -275,12 +277,13 @@ public final class WallLineUnfoldChart extends Pane {
         gc.clip();
 
         for (Fracture fracture : model.fractures()) {
+            double width = fractureLineWidth(fracture);
             gc.setStroke(Color.web("#FFFFFF", 0.8));
-            gc.setLineWidth(7.5);
+            gc.setLineWidth(width + 3.0);
             strokeFracture(gc, fracture);
 
             gc.setStroke(resistivityScale.colorOf(fracture.resistivity()));
-            gc.setLineWidth(4.6);
+            gc.setLineWidth(width);
             strokeFracture(gc, fracture);
             resistivityPatches.add(new ResistivityPatch(fracturePath(fracture), fracture.resistivity()));
         }
@@ -387,6 +390,24 @@ public final class WallLineUnfoldChart extends Pane {
         gc.stroke();
     }
 
+    /** 把张开度换算成屏幕显示线宽：3 px 基准 + 真实厚度对应的像素。 */
+    double fractureLineWidth(Fracture fracture) {
+
+        double thicknessM;
+        double pixels;
+        if (Math.abs(FractureGeometry.normalZ(fracture)) < 1e-6) {
+            thicknessM = FractureGeometry.arcThicknessM(fracture);
+            pixels = thicknessM / (2 * Math.PI * model.wellRadius()) * PLOT_WIDTH;
+        } else {
+            thicknessM = FractureGeometry.depthThicknessM(fracture);
+            pixels = thicknessM / (zBottom - zTop) * PLOT_HEIGHT;
+        }
+        if (!Double.isFinite(pixels)) {
+            return FRACTURE_BASE_WIDTH;
+        }
+        return Math.min(MAX_FRACTURE_LINE_WIDTH, FRACTURE_BASE_WIDTH + pixels);
+    }
+
     private void drawVerticalFractureLine(
             GraphicsContext gc, Fracture fracture, double angle) {
         double x = angleToX(angle);
@@ -402,7 +423,7 @@ public final class WallLineUnfoldChart extends Pane {
         Path path = new Path();
         path.setFill(null);
         path.setStroke(Color.BLACK);
-        path.setStrokeWidth(4.6);
+        path.setStrokeWidth(fractureLineWidth(fracture));
         if (Math.abs(FractureGeometry.normalZ(fracture)) < 1e-9) {
             double direction = Math.toDegrees(Math.atan2(
                     FractureGeometry.normalY(fracture), FractureGeometry.normalX(fracture)));
@@ -810,7 +831,7 @@ public final class WallLineUnfoldChart extends Pane {
     private int fractureAt(double angle, double x, double y) {
 
         int hit = -1;
-        double nearest = FRACTURE_HIT_TOLERANCE;
+        double nearest = Double.POSITIVE_INFINITY;
 
         for (int i = 0; i < model.fractures().size(); i++) {
             Fracture fracture = model.fractures().get(i);
@@ -829,7 +850,8 @@ public final class WallLineUnfoldChart extends Pane {
                 distance = Math.abs(y - zToY(traceDepth));
             }
 
-            if (distance <= nearest) {
+            double tolerance = FRACTURE_HIT_TOLERANCE + fractureLineWidth(fracture) / 2;
+            if (distance <= tolerance && distance < nearest) {
                 nearest = distance;
                 hit = i;
             }

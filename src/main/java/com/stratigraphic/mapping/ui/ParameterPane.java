@@ -46,7 +46,7 @@ import java.util.List;
  * <ul>
  *   <li>井数据：井眼半径、井眼电阻率；</li>
  *   <li>地层数据：界面个数 n、统一倾角、n 个界面深度、n+1 层层电阻率；</li>
- *   <li>裂缝数据：交点深度、法向仰角、法向方位角和裂缝电阻率 R1；</li>
+ *   <li>裂缝数据：交点深度、法向仰角、法向方位角、裂缝电阻率 R1、张开度和介电常数；</li>
  *   <li>异常体数据：球形异常体、正方体异常体和楔形体异常体；</li>
  *   <li>井壁展开：两个展开点的深度位置。</li>
  * </ul>
@@ -641,12 +641,12 @@ public final class ParameterPane extends BorderPane {
         return scroll;
     }
 
-    /** 裂缝参数：深度、法向角和 R1。 */
+    /** 裂缝参数：深度、法向角、R1、张开度和介电常数。 */
     private TitledPane buildFractureSection() {
 
         Label hint = new Label(
-                "裂缝采用 formation_G 格式：交点深度、法向仰角、法向方位角和 R1；"
-                        + "R1 同时用于两幅图中的裂缝颜色分级。"
+                "裂缝采用 formation_G 格式：交点深度、法向仰角、法向方位角、R1 和张开度（m）；"
+                        + "R1 同时用于两幅图中的裂缝颜色分级；张开度用于二维切片和正演。"
                         + "仰角和方位角可输入负数或任意周期等价角度。");
         hint.getStyleClass().add("hint");
         hint.setWrapText(true);
@@ -1716,6 +1716,7 @@ public final class ParameterPane extends BorderPane {
         private final TextField elevationField;
         private final TextField azimuthField;
         private final TextField resistivityField;
+        private final TextField apertureField;
         private final TextField dielectricField;
 
         private FractureRow(Fracture fracture) {
@@ -1734,6 +1735,10 @@ public final class ParameterPane extends BorderPane {
                     fracture == null ? "" : plain(fracture.normalAzimuthDeg()), 86);
             resistivityField = numberField(
                     fracture == null ? "" : plain(fracture.resistivity()), 86);
+            apertureField = numberField(fracture == null
+                    ? plain(Fracture.DEFAULT_APERTURE)
+                    : plain(fracture.aperture()), 86);
+            apertureField.setTooltip(new Tooltip("裂缝张开度 / 厚度，单位 m；例如 0.002 = 2 mm"));
             dielectricField = numberField(fracture == null
                     ? plain(DielectricConstant.VALUE)
                     : plain(fracture.dielectricConstant()), 86);
@@ -1748,7 +1753,8 @@ public final class ParameterPane extends BorderPane {
             addRow(grid, 1, "法向仰角 / °", elevationField);
             addRow(grid, 2, "法向方位角 / °", azimuthField);
             addRow(grid, 3, "R1 / (Ω·m)", resistivityField);
-            addRow(grid, 4, "介电常数 εr", dielectricField);
+            addRow(grid, 4, "张开度 / m", apertureField);
+            addRow(grid, 5, "介电常数 εr", dielectricField);
 
             card.getStyleClass().add("fracture-card");
             card.getChildren().addAll(header, grid);
@@ -1769,7 +1775,9 @@ public final class ParameterPane extends BorderPane {
                     readNumber(resistivityField.getText(),
                             "第 " + index + " 条裂缝电阻率 R1"),
                     readPositiveNumber(dielectricField.getText(),
-                            "第 " + index + " 条裂缝介电常数 εr"));
+                            "第 " + index + " 条裂缝介电常数 εr"),
+                    readPositiveNumber(apertureField.getText(),
+                            "第 " + index + " 条裂缝张开度"));
         }
 
         private boolean allBlank() {

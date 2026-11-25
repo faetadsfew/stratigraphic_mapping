@@ -47,4 +47,22 @@ final class FractureGeometry {
         }
         return fracture.depth() - horizontalOffsetM * normalX(fracture) / nz;
     }
+
+    /**
+     * 裂缝在深度方向的视厚度 (m)：两条平行边界面的深度差。
+     * 对近垂直裂缝没有意义，返回 NaN。
+     */
+    static double depthThicknessM(Fracture fracture) {
+        double nz = Math.abs(normalZ(fracture));
+        return nz < 1e-6 ? Double.NaN : fracture.aperture() / nz;
+    }
+
+    /**
+     * 近垂直裂缝在井壁展开图横坐标（弧长）方向的视宽度 (m)。
+     * 非垂直裂缝返回 NaN。
+     */
+    static double arcThicknessM(Fracture fracture) {
+        double horizontal = Math.hypot(normalX(fracture), normalY(fracture));
+        return horizontal < 1e-6 ? Double.NaN : fracture.aperture() / horizontal;
+    }
 }

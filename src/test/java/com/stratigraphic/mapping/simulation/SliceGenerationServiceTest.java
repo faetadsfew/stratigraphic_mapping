@@ -180,6 +180,36 @@ class SliceGenerationServiceTest {
         }
     }
 
+    @Test
+    void fractureApertureFlowsIntoGeneratedSliceAndMaterialIntervals() throws Exception {
+        StratumModel model = new StratumModel(
+                0.1, 100, 90,
+                List.of(new StratumInterface(0.5)),
+                List.of(20.0, 30.0),
+                List.of(new Fracture(0.4, 0, 0, 50, 1.0, 0.012)));
+
+        SliceGenerationService.Result result = new SliceGenerationService(temp)
+                .generate(model, 0, 1);
+        String raw = Files.readString(
+                result.output().resolve("Card_001_ang_000.00.txt"));
+        ModelInputs.Model slice = ModelInputs.parse("1 1\n0 1 1\n" + raw);
+
+        assertEquals(1, slice.fractures().size());
+        assertEquals(0.012, slice.fractures().get(0).get(4), 1e-12);
+        assertEquals(20, InputPreparation.resistivity(slice, 0.393, false), 1e-12);
+        assertEquals(50, InputPreparation.resistivity(slice, 0.395, false), 1e-12);
+        assertEquals(50, InputPreparation.resistivity(slice, 0.405, false), 1e-12);
+        assertEquals(20, InputPreparation.resistivity(slice, 0.407, false), 1e-12);
+
+        String modelInput = Files.readString(temp.resolve("NGI_PLOT_INP.txt"));
+        String fractureLine = modelInput.lines()
+                .dropWhile(line -> !line.contains("3. 裂缝"))
+                .skip(2)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(0.012, Double.parseDouble(fractureLine.strip().split("\\s+")[4]), 1e-12);
+    }
+
     private static StratumModel referenceModel() {
         return new StratumModel(
                 0.1016,

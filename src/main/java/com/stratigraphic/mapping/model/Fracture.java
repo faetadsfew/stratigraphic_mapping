@@ -8,19 +8,33 @@ package com.stratigraphic.mapping.model;
  * @param normalAzimuthDeg 裂缝法向方位角 (°)，允许任意有限值；按 360° 周期等价
  * @param resistivity 裂缝电阻率 R1 (Ω·m)，同时用于裂缝颜色分级
  * @param dielectricConstant 裂缝相对介电常数
+ * @param aperture 裂缝张开度 / 厚度 (m)，必须大于 0
  */
 public record Fracture(double depth,
                        double normalElevationDeg,
                        double normalAzimuthDeg,
                        double resistivity,
-                       double dielectricConstant) {
+                       double dielectricConstant,
+                       double aperture) {
+
+    /** 旧输入未写张开度时沿用的默认值：2 mm。 */
+    public static final double DEFAULT_APERTURE = 0.002;
 
     public Fracture(double depth,
                     double normalElevationDeg,
                     double normalAzimuthDeg,
                     double resistivity) {
         this(depth, normalElevationDeg, normalAzimuthDeg, resistivity,
-                DielectricConstant.VALUE);
+                DielectricConstant.VALUE, DEFAULT_APERTURE);
+    }
+
+    public Fracture(double depth,
+                    double normalElevationDeg,
+                    double normalAzimuthDeg,
+                    double resistivity,
+                    double dielectricConstant) {
+        this(depth, normalElevationDeg, normalAzimuthDeg, resistivity,
+                dielectricConstant, DEFAULT_APERTURE);
     }
 
     public Fracture {
@@ -38,6 +52,9 @@ public record Fracture(double depth,
         }
         if (!Double.isFinite(dielectricConstant) || dielectricConstant <= 0) {
             throw new IllegalArgumentException("裂缝介电常数 εr 必须大于 0");
+        }
+        if (!Double.isFinite(aperture) || aperture <= 0) {
+            throw new IllegalArgumentException("裂缝张开度必须大于 0");
         }
     }
 

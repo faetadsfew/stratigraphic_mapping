@@ -162,12 +162,12 @@ class IntegratedChartsRenderTest {
                 assertEquals(5.3, result.fractures().get(0).depth(), 1e-12);
                 assertEquals(60, result.fractures().get(1).normalElevationDeg(), 1e-12);
                 assertEquals(1, result.sphereFractures().size());
-                assertEquals(5.6, result.sphereFractures().get(0).centerDepth(), 1e-12);
-                assertEquals(0.08, result.sphereFractures().get(0).radius(), 1e-12);
+                assertEquals(5.15, result.sphereFractures().get(0).centerDepth(), 1e-12);
+                assertEquals(0.04, result.sphereFractures().get(0).radius(), 1e-12);
                 assertEquals(50, result.sphereFractures().get(0).resistivity(), 1e-12);
                 assertEquals(1, result.cubeAnomalies().size());
-                assertEquals(5.45, result.cubeAnomalies().get(0).centerDepth(), 1e-12);
-                assertEquals(0.14, result.cubeAnomalies().get(0).sideLength(), 1e-12);
+                assertEquals(5.15, result.cubeAnomalies().get(0).centerDepth(), 1e-12);
+                assertEquals(0.08, result.cubeAnomalies().get(0).sideLength(), 1e-12);
                 assertEquals(70, result.cubeAnomalies().get(0).resistivity(), 1e-12);
                 assertEquals(1, result.surfaceTexts().size());
                 assertEquals("文字", result.surfaceTexts().get(0).content());

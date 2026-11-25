@@ -32,7 +32,6 @@ public final class SliceGenerationService {
     private static final String MODEL_INPUT = "NGI_PLOT_INP.txt";
     private static final String OUTPUT_DIRECTORY = "192_Slices_Output";
     private static final double SLICE_STEP = 0.001;
-    private static final double DEFAULT_APERTURE = 0.002;
 
     public record Result(Path output, Path backup, String generation) { }
 
@@ -210,7 +209,7 @@ public final class SliceGenerationService {
             if (intersection < start || intersection > end) continue;
             double slope = tangent * Math.sin(Math.toRadians(angle - fracture.normalAzimuthDeg()));
             fractures.add(new double[]{intersection, Math.toDegrees(Math.atan(slope)), fracture.resistivity(),
-                    fracture.normalAzimuthDeg(), DEFAULT_APERTURE});
+                    fracture.normalAzimuthDeg(), fracture.aperture()});
             fracturePermittivities.add(fracture.dielectricConstant());
         }
         return new Slice(List.copyOf(layers), List.copyOf(fractures), List.copyOf(fracturePermittivities));
@@ -269,7 +268,7 @@ public final class SliceGenerationService {
         text.append(model.fractures().size()).append('\n');
         for (Fracture fracture : model.fractures())
             row(text, fracture.depth(), fracture.normalElevationDeg(), fracture.resistivity(),
-                    fracture.normalAzimuthDeg(), DEFAULT_APERTURE);
+                    fracture.normalAzimuthDeg(), fracture.aperture());
         text.append("% ===== 4. 球体 =====\n");
         text.append(model.sphereFractures().size()).append('\n');
         for (SphereFracture sphere : model.sphereFractures())

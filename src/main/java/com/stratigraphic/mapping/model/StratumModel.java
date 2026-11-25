@@ -299,8 +299,9 @@ public final class StratumModel {
         DoubleSummaryStatistics depths = new DoubleSummaryStatistics();
         for (Fracture fracture : fractures) {
             double elevation = Math.toRadians(fracture.normalizedElevationDeg());
-            double halfHeight = Math.abs(Math.cos(elevation)) < 1e-9
-                    ? 0 : Math.abs(wellRadius * Math.tan(elevation));
+            double halfHeight = (Math.abs(Math.cos(elevation)) < 1e-9
+                    ? 0 : Math.abs(wellRadius * Math.tan(elevation)))
+                    + fracture.aperture() / 2;
             depths.accept(fracture.depth() - halfHeight);
             depths.accept(fracture.depth() + halfHeight);
         }

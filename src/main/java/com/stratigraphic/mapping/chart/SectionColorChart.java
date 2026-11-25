@@ -29,6 +29,8 @@ public final class SectionColorChart extends SectionChart {
 
     /** 点击裂缝的容差（图面坐标像素），比细线本身宽一些，方便选中。 */
     private static final double FRACTURE_HIT_TOLERANCE = 10;
+    private static final double FRACTURE_BASE_WIDTH = 3.0;
+    private static final double MAX_FRACTURE_LINE_WIDTH = 80.0;
 
     private final ColorScale scale;
 
@@ -206,29 +208,44 @@ public final class SectionColorChart extends SectionChart {
                 geo.figureWidth(), geo.figureHeight()));
 
         for (Fracture fracture : model.fractures()) {
+            double width = fractureLineWidth(fracture);
             Line glow = fractureLine(fracture);
             glow.setStroke(Color.web("#FFFFFF", 0.75));
-            glow.setStrokeWidth(7.5);
+            glow.setStrokeWidth(width + 3.0);
             fractureGroup.getChildren().add(glow);
 
             Line line = fractureLine(fracture);
             line.setStroke(scale.colorOf(fracture.resistivity()));
-            line.setStrokeWidth(4.6);
+            line.setStrokeWidth(width);
             fractureGroup.getChildren().add(line);
         }
 
         getChildren().add(fractureGroup);
     }
 
+    /** 张开度换算为剖面图上的显示线宽：3 px 基准 + 真实厚度对应的像素。 */
+    double fractureLineWidth(Fracture fracture) {
+
+        double thicknessM = Math.abs(FractureGeometry.normalZ(fracture)) < 1e-6
+                ? FractureGeometry.arcThicknessM(fracture)
+                : FractureGeometry.depthThicknessM(fracture);
+        double pixels = Double.isFinite(thicknessM)
+                ? thicknessM * SectionGeometry.PX_PER_M
+                : 0.0;
+        return Math.min(MAX_FRACTURE_LINE_WIDTH, FRACTURE_BASE_WIDTH + pixels);
+    }
+
     @Override
     protected int fractureAt(double x, double y) {
 
         int hit = -1;
-        double nearest = FRACTURE_HIT_TOLERANCE;
+        double nearest = Double.POSITIVE_INFINITY;
 
         for (int i = 0; i < model.fractures().size(); i++) {
-            double distance = distanceToSegment(x, y, fractureLine(model.fractures().get(i)));
-            if (distance <= nearest) {
+            Fracture fracture = model.fractures().get(i);
+            double distance = distanceToSegment(x, y, fractureLine(fracture));
+            double tolerance = FRACTURE_HIT_TOLERANCE + fractureLineWidth(fracture) / 2;
+            if (distance <= tolerance && distance < nearest) {
                 nearest = distance;
                 hit = i;
             }

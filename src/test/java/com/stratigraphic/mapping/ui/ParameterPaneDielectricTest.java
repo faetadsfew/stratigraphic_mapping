@@ -60,6 +60,43 @@ class ParameterPaneDielectricTest {
         }
     }
 
+    @Test
+    void apertureFieldShowsModelValueAndCanBeEdited() throws Exception {
+
+        startToolkit();
+
+        CountDownLatch checked = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        Platform.runLater(() -> {
+            try {
+                ParameterPane pane = new ParameterPane();
+                StratumModel model = new StratumModel(
+                        0.1, 100, 90,
+                        List.of(new StratumInterface(1.0)),
+                        List.of(20.0, 30.0),
+                        List.of(new Fracture(1.0, 30, 45, 100, 2.5, 0.004)));
+
+                pane.setModel(model, "aperture test");
+                TextField aperture = textField(pane, "fractureRows", 0, "apertureField");
+                assertEquals(0.004, Double.parseDouble(aperture.getText()), 1e-12);
+
+                aperture.setText("0.008");
+                assertEquals(0.008, pane.toModel().fractures().get(0).aperture(), 1e-12);
+                assertEquals(2.5, pane.toModel().fractures().get(0).dielectricConstant(), 1e-12);
+            } catch (Throwable throwable) {
+                failure.set(throwable);
+            } finally {
+                checked.countDown();
+            }
+        });
+
+        assertTrue(checked.await(10, TimeUnit.SECONDS), "张开度输入框检查超时");
+        if (failure.get() != null) {
+            throw new AssertionError("张开度输入框编辑失败", failure.get());
+        }
+    }
+
     private static TextField textField(Object owner, String fieldName) throws Exception {
         return (TextField) readField(owner, fieldName);
     }

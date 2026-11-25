@@ -1,6 +1,7 @@
 package com.stratigraphic.mapping.reader;
 
 import com.stratigraphic.mapping.model.CubeAnomaly;
+import com.stratigraphic.mapping.model.DielectricConstant;
 import com.stratigraphic.mapping.model.Fracture;
 import com.stratigraphic.mapping.model.SphereFracture;
 import com.stratigraphic.mapping.model.StratumInterface;
@@ -266,12 +267,19 @@ public final class StratumModelReader {
                 double[] row = firstNumericRowAfter(lines, i + 1);
                 fractureCount = parseInteger(row[0], i + 1, "裂缝个数 n2");
             } else if (header.contains("裂缝和井轴的交点深度")) {
-                for (double[] row : numericRowsAfter(lines, i + 1)) {
-                    if (row.length < 4) {
-                        throw new IllegalArgumentException(
-                                "第 " + (i + 1) + " 行：裂缝行至少需要深度、法向仰角、法向方位角和 R1 四个数");
+                // 0 条裂缝：忽略遗留的旧行，不解析其内容。
+                if (fractureCount == null || fractureCount != 0) {
+                    for (double[] row : numericRowsAfter(lines, i + 1)) {
+                        if (row.length < 4) {
+                            throw new IllegalArgumentException(
+                                    "第 " + (i + 1) + " 行：裂缝行至少需要深度、法向仰角、法向方位角和 R1 四个数；"
+                                            + "第五列可写张开度 / m");
+                        }
+                        double aperture = row.length >= 5
+                                ? row[4] : Fracture.DEFAULT_APERTURE;
+                        fractures.add(new Fracture(row[0], row[1], row[2], row[3],
+                                DielectricConstant.VALUE, aperture));
                     }
-                    fractures.add(new Fracture(row[0], row[1], row[2], row[3]));
                 }
             } else if (header.contains("球体") && header.contains("=====")) {
                 sphereFractures = parseSphereSection(lines, i + 1);
@@ -291,17 +299,31 @@ public final class StratumModelReader {
                 || wellRadius == null || wellResistivity == null) {
             throw new IllegalArgumentException("formation_G 文件缺少地层模型参数");
         }
-        if (depths.size() != interfaceCount) {
-            throw new IllegalArgumentException(
-                    "formation_G 文件写的界面个数为 " + interfaceCount
-                            + "，实际列出 " + depths.size() + " 个深度");
+        if (interfaceCount == 0) {
+            // 0 个界面表示没有分层：忽略文件里遗留的旧界面深度和多余层行，
+            // 只保留第一行作为背景层电阻率。
+            depths = new ArrayList<>();
+            if (resistivities.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "formation_G 文件界面个数为 0 时，至少需要一行背景层电阻率");
+            }
+            resistivities = List.of(resistivities.get(0));
+        } else {
+            if (depths.size() != interfaceCount) {
+                throw new IllegalArgumentException(
+                        "formation_G 文件写的界面个数为 " + interfaceCount
+                                + "，实际列出 " + depths.size() + " 个深度");
+            }
+            if (resistivities.size() != interfaceCount + 1) {
+                throw new IllegalArgumentException(
+                        "formation_G 文件应有 " + (interfaceCount + 1)
+                                + " 个层电阻率，实际列出 " + resistivities.size() + " 个");
+            }
         }
-        if (resistivities.size() != interfaceCount + 1) {
-            throw new IllegalArgumentException(
-                    "formation_G 文件应有 " + (interfaceCount + 1)
-                            + " 个层电阻率，实际列出 " + resistivities.size() + " 个");
-        }
-        if (fractureCount != null && fractures.size() != fractureCount) {
+        if (fractureCount != null && fractureCount == 0) {
+            // 0 条裂缝表示没有裂缝：忽略遗留的旧裂缝行。
+            fractures = new ArrayList<>();
+        } else if (fractureCount != null && fractures.size() != fractureCount) {
             throw new IllegalArgumentException(
                     "formation_G 文件写的裂缝个数为 " + fractureCount
                             + "，实际列出 " + fractures.size() + " 条裂缝");
@@ -325,6 +347,9 @@ public final class StratumModelReader {
         }
 
         int count = parseInteger(rows.get(0)[0], start, "正方体个数");
+        if (count == 0) {
+            return List.of();
+        }
         if (rows.size() - 1 != count) {
             throw new IllegalArgumentException(
                     "formation_G 文件写的正方体个数为 " + count
@@ -351,6 +376,9 @@ public final class StratumModelReader {
         }
 
         int count = parseInteger(rows.get(0)[0], start, "球体个数");
+        if (count == 0) {
+            return List.of();
+        }
         if (rows.size() - 1 != count) {
             throw new IllegalArgumentException(
                     "formation_G 文件写的球体个数为 " + count
@@ -377,6 +405,9 @@ public final class StratumModelReader {
         }
 
         int count = parseInteger(rows.get(0)[0], start, "楔形体个数");
+        if (count == 0) {
+            return List.of();
+        }
         if (rows.size() - 1 != count) {
             throw new IllegalArgumentException(
                     "第 " + start + " 行：formation_G 文件写的楔形体个数为 " + count
@@ -420,6 +451,9 @@ public final class StratumModelReader {
                 countLine = i + 1;
                 count = parseInteger(parseNumber(parts[0], i + 1, "文字总个数"),
                         i + 1, "文字总个数");
+                if (count == 0) {
+                    return List.of();
+                }
                 continue;
             }
             if (parts.length < 5) {
